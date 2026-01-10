@@ -287,6 +287,48 @@ impl Editor {
         }
     }
 
+    /**
+     * coord: (y, x)
+     * */
+    fn go_to_line(&mut self, coords: (usize, usize)) {
+        // Validar que la línea existe
+        // Recordar que coords.0 es base-1 (como lo ve el usuario)
+        // pero internamente trabajamos con base-0
+        if coords.0 >= self.lines.len() {
+            // La línea no existe, mostrar error y no mover el cursor
+            self.state_msg = format!(
+                "Línea {} no existe. El documento tiene {} líneas",
+                coords.0 + 1,
+                self.lines.len()
+            );
+            return;
+        }
+
+        // La línea es válida, mover el cursor
+        self.cursor_y = coords.0;
+
+        // Ahora validar la columna basándonos en la línea donde acabamos de posicionar el cursor
+        let line_length = self.lines[self.cursor_y].len();
+
+        if coords.1 >= line_length {
+            // Si la columna está fuera de rango, ir al final de la línea
+            self.cursor_x = line_length;
+            self.state_msg = format!(
+                "Columna {} fuera de rango. Posicionado al final de la línea (columna {})",
+                coords.1 + 1,
+                line_length
+            );
+        } else {
+            // La columna es válida
+            self.cursor_x = coords.1;
+            self.state_msg = format!(
+                "Posicionado en línea {}, columna {}",
+                self.cursor_y + 1,
+                self.cursor_x + 1
+            );
+        }
+    }
+
     fn write<W: Write>(&self, stdout: &mut W) {
         write!(stdout, "{}", termion::clear::All).unwrap();
 
@@ -541,6 +583,40 @@ fn main() {
 
             // Ctrl + P para coincidencia anterior
             Key::Ctrl('p') => editor.previous_match(),
+
+            // Ctrl + G
+            Key::Ctrl('g') => {
+                let coords_str = request_entry(&mut stdout, "Ir a (linea, columna): ");
+
+                // Intentar parsear las coordenadas de manera segura
+                let parts: Vec<&str> = coords_str.split(',').collect();
+
+                // Verificar que tenemos exactamente dos partes
+                if parts.len() != 2 {
+                    editor.state_msg = String::from("Formato inválido. Use: linea,columna");
+                    editor.write(&mut stdout);
+                    continue;
+                }
+
+                // Intentar parsear cada parte como número
+                match (
+                    parts[0].trim().parse::<usize>(),
+                    parts[1].trim().parse::<usize>(),
+                ) {
+                    (Ok(line), Ok(col)) => {
+                        // Verificar que los números no sean cero (el usuario ingresa base-1)
+                        if line == 0 || col == 0 {
+                            editor.state_msg = String::from("Las líneas y columnas empiezan en 1");
+                        } else {
+                            // Convertir de base-1 (usuario) a base-0 (interno)
+                            editor.go_to_line((line - 1, col - 1));
+                        }
+                    }
+                    _ => {
+                        editor.state_msg = String::from("Ingrese números válidos");
+                    }
+                }
+            }
 
             //Teclas de navegación
             Key::Up => editor.move_up(),
