@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Write},
 };
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
@@ -11,6 +11,8 @@ struct Editor {
     filename: Option<String>,
     state_msg: String,
     window_sizes: (u16, u16),
+    offset_row: usize,
+    offset_col: usize,
 }
 
 impl Editor {
@@ -24,6 +26,8 @@ impl Editor {
             filename: None,
             state_msg: String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir"),
             window_sizes,
+            offset_row: 0,
+            offset_col: 0,
         }
     }
 
@@ -44,6 +48,8 @@ impl Editor {
                 self.filename = Some(path.to_string());
                 self.cursor_x = 0;
                 self.cursor_y = 0;
+                self.offset_row = 0;
+                self.offset_col = 0;
                 self.state_msg = format!("Archivo '{}' cargado correctamente", path);
             }
             Err(e) => {
@@ -114,7 +120,7 @@ impl Editor {
 
     fn move_down(&mut self) {
         if self.cursor_y < self.lines.len() - 1 {
-            self.cursor_y -= 1;
+            self.cursor_y += 1;
 
             // Ajustamos cursor_x si la nueva línea es más corta
             let line_length = self.lines[self.cursor_y].len();
@@ -145,21 +151,77 @@ impl Editor {
         }
     }
 
+    fn adjust_scroll(&mut self) {
+        // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
+        let visible_lines = (self.window_sizes.1 - 2) as usize;
+
+        // Si el cursor está por encima de la ventana visible, ajustamos hacia arriba
+        if self.cursor_y < self.offset_row {
+            self.offset_row = self.cursor_y;
+        }
+
+        // Si el cursor está por debajo de la ventana visible, ajustar hacia abajo
+        // Restar 1 porque las posiciones empiezan en 0
+        if self.cursor_y >= self.offset_row + visible_lines {
+            self.offset_row = self.cursor_y - visible_lines + 1;
+        }
+
+        // Calcular el ancho del area de numeros de linea
+        // Necesitamos saber cuantos digitos tiene el numero de linea mas alto
+        let line_num_digits = self.lines.len().to_string().len();
+        let line_num_width = line_num_digits + 2;
+
+        // Calcular cuantas columnas tenemos disponibles para el texto
+        let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
+
+        // Ajustar scroll horizontal si es necesario
+        if self.cursor_x < self.offset_col {
+            self.offset_col = self.cursor_x;
+        }
+
+        if self.cursor_x >= self.offset_col + visible_cols {
+            self.offset_col = self.cursor_x - visible_cols + 1;
+        }
+    }
+
     fn write<W: Write>(&self, stdout: &mut W) {
         write!(stdout, "{}", termion::clear::All).unwrap();
 
         // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
         let visible_lines = (self.window_sizes.1 - 2) as usize;
 
-        // Dibujar solo las lineas que caben en la pantalla
-        for (i, line) in self.lines.iter().enumerate().take(visible_lines) {
+        // Calcular ancho necesario para los numero de linea
+        // Esto depende de cuantas lineas tiene el documento en total
+        let line_num_digits = self.lines.len().to_string().len();
+        let line_num_width = line_num_digits + 2;
+
+        // Iterar solo sobre las lineas que estan actualmente visibles
+        // self.offset_row nos dice cual es la primera linea visible
+        let start = self.offset_row;
+        let end = (self.offset_row + visible_lines).min(self.lines.len());
+
+        for i in start..end {
+            let line_num = i + 1;
+            let window_row = (i - self.offset_row + 1) as u16;
+
+            // Dibujar el número de línea con un color diferente
+            // El formato {:>width$} alinea el número a la derecha
             write!(
                 stdout,
-                "{}{}",
-                termion::cursor::Goto(1, (i + 1) as u16),
-                line
+                "{}{}{}{}",
+                termion::cursor::Goto(1, window_row),
+                termion::color::Fg(termion::color::Cyan),
+                format!("{:>width$} ", line_num, width = line_num_digits),
+                termion::color::Fg(termion::color::Reset)
             )
             .unwrap();
+
+            // Obtenemos la porcion visible  de la linea considerando el scroll horizontal
+            let line = &self.lines[i];
+            let start_col = self.offset_col.min(line.len());
+            let visible_line = &line[start_col..];
+
+            write!(stdout, "{}", visible_line).unwrap();
         }
 
         // Dibujar la barra de estado en la parte inferior
@@ -171,7 +233,12 @@ impl Editor {
             None => String::from("[Sin nombre]"),
         };
 
-        let info_position = format!("Linea {}, Col {}", self.cursor_y + 1, self.cursor_x + 1);
+        let info_position = format!(
+            "Linea {}/{}, Col {}",
+            self.cursor_y + 1,
+            self.lines.len(),
+            self.cursor_x + 1
+        );
 
         // Dibujar la barra de estado con fondo invertido
         write!(
@@ -184,6 +251,9 @@ impl Editor {
         )
         .unwrap();
 
+        // Limpiar cualquier texto que pudiera quedar de la linea de estado anterior
+        write!(stdout, "{}", termion::clear::AfterCursor).unwrap();
+
         // Dibujar la barra de estado en la ultima linea
         write!(
             stdout,
@@ -192,11 +262,17 @@ impl Editor {
             &self.state_msg
         )
         .unwrap();
-        // Posicionamos el cursor en la ubicación correcta
+
+        // Calcular la posicion visual del cursor en la pantalla
+        // Tenemos que considerar el offset de scroll y el ancho de los numeros de linea
+        let visual_cursor_x =
+            (self.cursor_x.saturating_sub(self.offset_col) + line_num_width) as u16;
+        let visual_cursor_y = (self.cursor_y.saturating_sub(self.offset_row) + 1) as u16;
+
         write!(
             stdout,
             "{}",
-            termion::cursor::Goto((self.cursor_x + 1) as u16, (self.cursor_y + 1) as u16)
+            termion::cursor::Goto(visual_cursor_x, visual_cursor_y)
         )
         .unwrap();
 
@@ -327,6 +403,7 @@ fn main() {
             _ => {}
         }
 
+        editor.adjust_scroll();
         editor.write(&mut stdout);
     }
 
