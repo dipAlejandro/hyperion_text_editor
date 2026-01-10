@@ -1,18 +1,69 @@
-use std::io::{self, Read, Write};
+use std::{
+    fs,
+    io::{self, Read, Write},
+};
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
 struct Editor {
     lines: Vec<String>,
     cursor_x: usize,
     cursor_y: usize,
+    filename: Option<String>,
+    state_msg: String,
+    window_sizes: (u16, u16),
 }
 
 impl Editor {
     fn new() -> Self {
+        let window_sizes = termion::terminal_size().unwrap_or((80, 24));
+
         Editor {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
+            filename: None,
+            state_msg: String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir"),
+            window_sizes,
+        }
+    }
+
+    fn open_file(&mut self, path: &str) {
+        // Intentar leer el archivo completo como un string
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                // Si se logra, dividir el contenido en lineas
+                // El collect() convierte el iterador en un Vec<String>
+                self.lines = content.lines().map(|line| line.to_string()).collect();
+
+                // Si el archivo esta vacio asegurar tener al menos una linea
+                if self.lines.is_empty() {
+                    self.lines.push(String::new());
+                }
+
+                // Guardar el nombre del archivo y resetear el cursor
+                self.filename = Some(path.to_string());
+                self.cursor_x = 0;
+                self.cursor_y = 0;
+                self.state_msg = format!("Archivo '{}' cargado correctamente", path);
+            }
+            Err(e) => {
+                self.state_msg = format!("Error al abrir el archivo: {}", e);
+            }
+        }
+    }
+
+    fn save_file(&mut self, path: &str) {
+        let content = self.lines.join("\n");
+
+        //Intentar escribir el contenido del archivo
+        match fs::write(path, content) {
+            Ok(_) => {
+                self.filename = Some(path.to_string());
+                self.state_msg = format!("Archivo '{}' guardado correctamente.", path);
+            }
+            Err(e) => {
+                self.state_msg = format!("Error al intentar guardar el archivo: {}", e);
+            }
         }
     }
 
@@ -97,8 +148,11 @@ impl Editor {
     fn write<W: Write>(&self, stdout: &mut W) {
         write!(stdout, "{}", termion::clear::All).unwrap();
 
-        for (i, line) in self.lines.iter().enumerate() {
-            // Posicionamos el cursor al inicio de cada línea (columna 1, fila i+1)
+        // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
+        let visible_lines = (self.window_sizes.1 - 2) as usize;
+
+        // Dibujar solo las lineas que caben en la pantalla
+        for (i, line) in self.lines.iter().enumerate().take(visible_lines) {
             write!(
                 stdout,
                 "{}{}",
@@ -107,8 +161,38 @@ impl Editor {
             )
             .unwrap();
         }
+
+        // Dibujar la barra de estado en la parte inferior
+        let state_row = self.window_sizes.1 - 1;
+
+        // Crear la información de la barra de estado
+        let info_file = match &self.filename {
+            Some(name) => name.clone(),
+            None => String::from("[Sin nombre]"),
+        };
+
+        let info_position = format!("Linea {}, Col {}", self.cursor_y + 1, self.cursor_x + 1);
+
+        // Dibujar la barra de estado con fondo invertido
+        write!(
+            stdout,
+            "{}{}{}{}",
+            termion::cursor::Goto(1, state_row),
+            termion::style::Invert,
+            format!("{} | {}", info_file, info_position),
+            termion::style::Reset
+        )
+        .unwrap();
+
+        // Dibujar la barra de estado en la ultima linea
+        write!(
+            stdout,
+            "{}{}",
+            termion::cursor::Goto(1, state_row + 1),
+            &self.state_msg
+        )
+        .unwrap();
         // Posicionamos el cursor en la ubicación correcta
-        // Sumamos 1 porque las coordenadas de la terminal empiezan en 1, no en 0
         write!(
             stdout,
             "{}",
@@ -118,6 +202,52 @@ impl Editor {
 
         stdout.flush().unwrap();
     }
+}
+
+fn request_entry<W: Write>(stdout: &mut W, prompt: &str) -> String {
+    let stdin = io::stdin();
+    let mut user_in = String::new();
+
+    // Mostrar prompt en la ultima linea
+    let (_, height) = termion::terminal_size().unwrap_or((80, 24));
+    write!(
+        stdout,
+        "{}{}{}",
+        termion::cursor::Goto(1, height),
+        termion::clear::CurrentLine,
+        prompt
+    )
+    .unwrap();
+
+    stdout.flush().unwrap();
+
+    // Leer caracter por caracter hasta que el usuario presione Enter
+    for k in stdin.keys() {
+        match k.unwrap() {
+            Key::Char('\n') => break,
+            Key::Char(c) => {
+                user_in.push(c);
+                write!(stdout, "{}", c).unwrap();
+                stdout.flush().unwrap();
+            }
+
+            Key::Backspace => {
+                if !user_in.is_empty() {
+                    user_in.pop();
+                    write!(
+                        stdout,
+                        "{} {}",
+                        termion::cursor::Left(1),
+                        termion::cursor::Left(1)
+                    )
+                    .unwrap();
+                    stdout.flush().unwrap();
+                }
+            }
+            _ => {}
+        }
+    }
+    user_in
 }
 
 fn main() {
@@ -141,9 +271,43 @@ fn main() {
 
     // Leer entrada de usuario
     for k in stdin.keys() {
+        // Limpiar el mensaje de estado antes de procesar la siguiente tecla
+        // Esto hace que los mensajes temporales desaparezcan después de cualquier acción
+
+        if !editor.state_msg.starts_with("Ctrl+") {
+            editor.state_msg = String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir");
+        }
         match k.unwrap() {
             //Ctrl + Q para salir
             Key::Ctrl('q') => break,
+
+            // Ctrl+S para guardar
+            Key::Ctrl('s') => {
+                let path = match &editor.filename {
+                    Some(name) => name.clone(),
+                    None => {
+                        // Si no hay nombre de archivo pedimos uno
+                        let name = request_entry(&mut stdout, "Guardar como: ");
+                        if name.is_empty() {
+                            editor.state_msg = String::from("Guardado cancelado");
+                            editor.write(&mut stdout);
+                            continue;
+                        }
+                        name
+                    }
+                };
+                editor.save_file(&path);
+            }
+
+            // Ctrl+O para abrir archivo
+            Key::Ctrl('o') => {
+                let path = request_entry(&mut stdout, "Abrir archivo: ");
+                if !path.is_empty() {
+                    editor.open_file(&path);
+                } else {
+                    editor.state_msg = String::from("Apertura cancelada");
+                }
+            }
 
             //Teclas de navegación
             Key::Up => editor.move_up(),
