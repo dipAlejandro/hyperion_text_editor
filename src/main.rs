@@ -7,7 +7,7 @@ use std::{
 };
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
-use crate::terminal::request_input;
+use crate::terminal::{clear_screen, keys, request_input};
 
 // Estructura que representa coincidencia de busqueda
 #[derive(Clone, Debug)]
@@ -501,11 +501,9 @@ fn main() {
             editor.state_msg = String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir");
         }
         match k.unwrap() {
-            //Ctrl + Q para salir
-            Key::Ctrl('q') => break,
+            keys::QUIT => break,
 
-            // Ctrl+S para guardar
-            Key::Ctrl('s') => {
+            keys::SAVE => {
                 let path = match &editor.filename {
                     Some(name) => name.clone(),
                     None => {
@@ -522,8 +520,7 @@ fn main() {
                 editor.save_file(&path);
             }
 
-            // Ctrl+O para abrir archivo
-            Key::Ctrl('o') => {
+            keys::OPEN => {
                 let path = request_input(&mut stdout, "Abrir archivo: ");
                 if !path.is_empty() {
                     editor.open_file(&path);
@@ -531,20 +528,16 @@ fn main() {
                     editor.state_msg = String::from("Apertura cancelada");
                 }
             }
-            // Ctrl + F para buscar
-            Key::Ctrl('f') => {
+
+            keys::SEARCH => {
                 let query = request_input(&mut stdout, "Buscar: ");
                 editor.search(&query);
             }
 
-            //  Ctrl + N para siguiente coincidencia
-            Key::Ctrl('n') => editor.next_match(),
+            keys::NEXT_MATCH => editor.next_match(),
+            keys::PREV_MATCH => editor.previous_match(),
 
-            // Ctrl + P para coincidencia anterior
-            Key::Ctrl('p') => editor.previous_match(),
-
-            // Ctrl + G
-            Key::Ctrl('g') => {
+            keys::GOTO_LINE => {
                 let coords_str = request_input(&mut stdout, "Ir a (linea, columna): ");
 
                 // Intentar parsear las coordenadas de manera segura
