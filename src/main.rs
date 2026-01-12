@@ -7,6 +7,8 @@ use std::{
 };
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
+use crate::terminal::request_input;
+
 // Estructura que representa coincidencia de busqueda
 #[derive(Clone, Debug)]
 struct Match {
@@ -471,52 +473,6 @@ impl Editor {
     }
 }
 
-fn request_entry<W: Write>(stdout: &mut W, prompt: &str) -> String {
-    let stdin = io::stdin();
-    let mut user_in = String::new();
-
-    // Mostrar prompt en la ultima linea
-    let (_, height) = termion::terminal_size().unwrap_or((80, 24));
-    write!(
-        stdout,
-        "{}{}{}",
-        termion::cursor::Goto(1, height),
-        termion::clear::CurrentLine,
-        prompt
-    )
-    .unwrap();
-
-    stdout.flush().unwrap();
-
-    // Leer caracter por caracter hasta que el usuario presione Enter
-    for k in stdin.keys() {
-        match k.unwrap() {
-            Key::Char('\n') => break,
-            Key::Char(c) => {
-                user_in.push(c);
-                write!(stdout, "{}", c).unwrap();
-                stdout.flush().unwrap();
-            }
-
-            Key::Backspace => {
-                if !user_in.is_empty() {
-                    user_in.pop();
-                    write!(
-                        stdout,
-                        "{} {}",
-                        termion::cursor::Left(1),
-                        termion::cursor::Left(1)
-                    )
-                    .unwrap();
-                    stdout.flush().unwrap();
-                }
-            }
-            _ => {}
-        }
-    }
-    user_in
-}
-
 fn main() {
     // Activar modo raw en la terminal
     let mut stdout = io::stdout().into_raw_mode().unwrap();
@@ -554,7 +510,7 @@ fn main() {
                     Some(name) => name.clone(),
                     None => {
                         // Si no hay nombre de archivo pedimos uno
-                        let name = request_entry(&mut stdout, "Guardar como: ");
+                        let name = request_input(&mut stdout, "Guardar como: ");
                         if name.is_empty() {
                             editor.state_msg = String::from("Guardado cancelado");
                             editor.write(&mut stdout);
@@ -568,7 +524,7 @@ fn main() {
 
             // Ctrl+O para abrir archivo
             Key::Ctrl('o') => {
-                let path = request_entry(&mut stdout, "Abrir archivo: ");
+                let path = request_input(&mut stdout, "Abrir archivo: ");
                 if !path.is_empty() {
                     editor.open_file(&path);
                 } else {
@@ -577,7 +533,7 @@ fn main() {
             }
             // Ctrl + F para buscar
             Key::Ctrl('f') => {
-                let query = request_entry(&mut stdout, "Buscar: ");
+                let query = request_input(&mut stdout, "Buscar: ");
                 editor.search(&query);
             }
 
@@ -589,7 +545,7 @@ fn main() {
 
             // Ctrl + G
             Key::Ctrl('g') => {
-                let coords_str = request_entry(&mut stdout, "Ir a (linea, columna): ");
+                let coords_str = request_input(&mut stdout, "Ir a (linea, columna): ");
 
                 // Intentar parsear las coordenadas de manera segura
                 let parts: Vec<&str> = coords_str.split(',').collect();
