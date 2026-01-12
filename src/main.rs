@@ -7,7 +7,7 @@ use std::{
 };
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
-use crate::terminal::{clear_screen, keys, request_input};
+use crate::terminal::{clear_screen, keys, message, request_input};
 
 // Estructura que representa coincidencia de busqueda
 #[derive(Clone, Debug)]
@@ -40,7 +40,7 @@ impl Editor {
             cursor_x: 0,
             cursor_y: 0,
             filename: None,
-            state_msg: String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir"),
+            state_msg: message::DEFAULT_STATUS.to_string(),
             window_sizes,
             offset_row: 0,
             offset_col: 0,
@@ -209,7 +209,7 @@ impl Editor {
             self.search_query = None;
             self.search_matches.clear();
             self.current_match_index = None;
-            self.state_msg = String::from("Busqueda cancelada");
+            self.state_msg = message::SEARCH_CANCELLED.to_string();
             return;
         }
 
@@ -269,7 +269,7 @@ impl Editor {
 
     fn next_match(&mut self) {
         if self.search_matches.is_empty() {
-            self.state_msg = String::from("No hay busqueda activa");
+            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
             return;
         }
 
@@ -281,7 +281,7 @@ impl Editor {
 
     fn previous_match(&mut self) {
         if self.search_matches.is_empty() {
-            self.state_msg = String::from("No hay busqueda activa");
+            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
             return;
         }
 
@@ -498,7 +498,7 @@ fn main() {
         // Esto hace que los mensajes temporales desaparezcan después de cualquier acción
 
         if !editor.state_msg.starts_with("Ctrl+") {
-            editor.state_msg = String::from("Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir");
+            editor.state_msg = message::DEFAULT_STATUS.to_string();
         }
         match k.unwrap() {
             keys::QUIT => break,
@@ -510,7 +510,7 @@ fn main() {
                         // Si no hay nombre de archivo pedimos uno
                         let name = request_input(&mut stdout, "Guardar como: ");
                         if name.is_empty() {
-                            editor.state_msg = String::from("Guardado cancelado");
+                            editor.state_msg = message::SAVE_CANCELLED.to_string();
                             editor.write(&mut stdout);
                             continue;
                         }
@@ -525,7 +525,7 @@ fn main() {
                 if !path.is_empty() {
                     editor.open_file(&path);
                 } else {
-                    editor.state_msg = String::from("Apertura cancelada");
+                    editor.state_msg = message::OPEN_CANCELLED.to_string();
                 }
             }
 
@@ -545,7 +545,7 @@ fn main() {
 
                 // Verificar que tenemos exactamente dos partes
                 if parts.len() != 2 {
-                    editor.state_msg = String::from("Formato inválido. Use: linea,columna");
+                    editor.state_msg = message::INVALID_FORMAT.to_string();
                     editor.write(&mut stdout);
                     continue;
                 }
@@ -558,14 +558,14 @@ fn main() {
                     (Ok(line), Ok(col)) => {
                         // Verificar que los números no sean cero (el usuario ingresa base-1)
                         if line == 0 || col == 0 {
-                            editor.state_msg = String::from("Las líneas y columnas empiezan en 1");
+                            editor.state_msg = message::LINES_START_AT_ONE.to_string();
                         } else {
                             // Convertir de base-1 (usuario) a base-0 (interno)
                             editor.go_to_line((line - 1, col - 1));
                         }
                     }
                     _ => {
-                        editor.state_msg = String::from("Ingrese números válidos");
+                        editor.state_msg = message::INVALID_NUMBERS.to_string();
                     }
                 }
             }
