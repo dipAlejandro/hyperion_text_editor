@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{self, Write},
 };
-use termion::{event::Key, input::TermRead, raw::IntoRawMode};
+use termion::event::Key;
 
 use crate::terminal::{clear_screen, keys, message, request_input};
 
@@ -474,8 +474,7 @@ impl Editor {
 }
 
 fn main() {
-    // Activar modo raw en la terminal
-    let mut stdout = io::stdout().into_raw_mode().unwrap();
+    let mut stdout = terminal::init_raw_mode().unwrap();
     let stdin = io::stdin();
 
     let mut editor = Editor::new();
@@ -493,7 +492,7 @@ fn main() {
     stdout.flush().unwrap();
 
     // Leer entrada de usuario
-    for k in stdin.keys() {
+    for k in terminal::read_keys() {
         // Limpiar el mensaje de estado antes de procesar la siguiente tecla
         // Esto hace que los mensajes temporales desaparezcan después de cualquier acción
 
@@ -591,12 +590,5 @@ fn main() {
         editor.adjust_scroll();
         editor.write(&mut stdout);
     }
-
-    write!(
-        stdout,
-        "{}{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1)
-    )
-    .unwrap();
+    clear_screen(&mut stdout);
 }
