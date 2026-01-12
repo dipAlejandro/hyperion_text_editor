@@ -1,3 +1,6 @@
+mod search;
+mod terminal;
+
 use std::{
     fs,
     io::{self, Write},
