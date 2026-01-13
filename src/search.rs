@@ -7,7 +7,7 @@ pub struct Match {
     /// Columna donde inicia la coincidencia
     pub start_col: usize,
 
-    /// Columna donde inicia la coincidencia
+    /// Columna donde termina la coincidencia
     pub end_col: usize,
 }
 
