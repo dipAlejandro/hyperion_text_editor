@@ -1,6 +1,7 @@
 mod buffer;
 mod search;
 mod terminal;
+mod ui;
 
 use std::io::Write;
 use termion::event::Key;
@@ -255,139 +256,52 @@ impl Editor {
     }
 
     fn write<W: Write>(&self, stdout: &mut W) {
-        write!(stdout, "{}", termion::clear::All).unwrap();
+        ui::clear_screen(stdout);
 
         // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
         let visible_lines = (self.window_sizes.1 - 2) as usize;
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
 
-        // Calcular ancho necesario para los numero de linea
-        // Esto depende de cuantas lineas tiene el documento en total
-        let line_num_digits = self.buffer.line_count().to_string().len();
-        let line_num_width = line_num_digits + 2;
-
-        // Iterar solo sobre las lineas que estan actualmente visibles
-        // self.offset_row nos dice cual es la primera linea visible
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
+        // Renderizar cada linea visible
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row + 1) as u16;
+            let line_num_digits = self.buffer.line_count().to_string().len();
 
-            // Dibujar el número de línea con un color diferente
-            // El formato {:>width$} alinea el número a la derecha
-            write!(
-                stdout,
-                "{}{}{}{}",
-                termion::cursor::Goto(1, window_row),
-                termion::color::Fg(termion::color::Cyan),
-                format!("{:>width$} ", line_num, width = line_num_digits),
-                termion::color::Fg(termion::color::Reset)
-            )
-            .unwrap();
+            // Dibujar numero de linea
+            ui::render_line_number(stdout, line_num, window_row, line_num_digits);
 
-            // Obtenemos la porcion visible  de la linea considerando el scroll horizontal
+            // Dibujar contenido de la línea con resaltado de búsqueda si aplica
             let line = &self.buffer.lines()[i];
-            let start_col = self.offset_col.min(line.len());
-            let visible_line = &line[start_col..];
-
-            // Si hay una busqueda activa resaltar las coincidencias
-            if self.search.is_active() {
-                let mut current_pos = 0;
-                let mut highlighted_line = String::new();
-
-                // Buscar todas las coincidencias en esta linea que esten visibles
-                for m in self.search.matches() {
-                    if m.line == i && m.start_col >= start_col {
-                        // Añadir texto normal antes de la coincidencia
-                        let text_before_len = m
-                            .start_col
-                            .saturating_sub(start_col)
-                            .saturating_sub(current_pos);
-
-                        if text_before_len > 0 && current_pos < visible_line.len() {
-                            let end_idx = (current_pos + text_before_len).min(visible_line.len());
-                            highlighted_line.push_str(&visible_line[current_pos..end_idx]);
-                            current_pos = end_idx;
-                        }
-
-                        // Añadir coincidencia resaltada
-                        let match_start = m.start_col.saturating_sub(start_col);
-                        let match_end = m.end_col.saturating_sub(start_col).min(visible_line.len());
-
-                        if match_start < visible_line.len() && match_end > match_start {
-                            highlighted_line.push_str(&format!(
-                                "{}{}{}",
-                                termion::color::Bg(termion::color::Yellow),
-                                &visible_line[match_start..match_end],
-                                termion::color::Bg(termion::color::Reset)
-                            ));
-                            current_pos = match_end;
-                        }
-                    }
-                }
-                // Añadir el resto de la linea después de todas las coincidencia
-                if current_pos < visible_line.len() {
-                    highlighted_line.push_str(&visible_line[current_pos..]);
-                }
-
-                write!(stdout, "{}", highlighted_line).unwrap();
-            } else {
-                write!(stdout, "{}", visible_line).unwrap();
-            }
+            ui::render_line_content(stdout, line, i, self.offset_col, &self.search);
         }
 
-        // Dibujar la barra de estado en la parte inferior
+        // Dibujar barra de estado
         let state_row = self.window_sizes.1 - 1;
-
-        // Crear la información de la barra de estado
-        let info_file = match &self.filename {
-            Some(name) => name.clone(),
-            None => String::from("[Sin nombre]"),
-        };
-
-        let info_position = format!(
-            "Linea {}/{}, Col {}",
+        ui::render_status_bar(
+            stdout,
+            state_row,
+            self.filename.as_deref(),
             self.cursor_y + 1,
             self.buffer.line_count(),
-            self.cursor_x + 1
+            self.cursor_x + 1,
         );
 
-        // Dibujar la barra de estado con fondo invertido
-        write!(
-            stdout,
-            "{}{}{}{}",
-            termion::cursor::Goto(1, state_row),
-            termion::style::Invert,
-            format!("{} | {}", info_file, info_position),
-            termion::style::Reset
-        )
-        .unwrap();
+        // Renderizar mensaje de estado
+        ui::render_message(stdout, state_row + 1, &self.state_msg);
 
-        // Limpiar cualquier texto que pudiera quedar de la linea de estado anterior
-        write!(stdout, "{}", termion::clear::AfterCursor).unwrap();
-
-        // Dibujar la barra de estado en la ultima linea
-        write!(
-            stdout,
-            "{}{}",
-            termion::cursor::Goto(1, state_row + 1),
-            &self.state_msg
-        )
-        .unwrap();
-
-        // Calcular la posicion visual del cursor en la pantalla
-        // Tenemos que considerar el offset de scroll y el ancho de los numeros de linea
-        let visual_cursor_x =
-            (self.cursor_x.saturating_sub(self.offset_col) + line_num_width) as u16;
-        let visual_cursor_y = (self.cursor_y.saturating_sub(self.offset_row) + 1) as u16;
-
-        write!(
-            stdout,
-            "{}",
-            termion::cursor::Goto(visual_cursor_x, visual_cursor_y)
-        )
-        .unwrap();
+        // Posicionar el cursor
+        let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
+            self.cursor_x,
+            self.cursor_y,
+            self.offset_col,
+            self.offset_row,
+            line_num_width,
+        );
+        ui::position_cursor(stdout, visual_x, visual_y);
 
         stdout.flush().unwrap();
     }
