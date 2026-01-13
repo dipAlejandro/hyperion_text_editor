@@ -75,7 +75,9 @@ impl TextBuffer {
     /// # Panics
     /// Si el índice de línea es inválido
     pub fn insert_char(&mut self, line_idx: usize, col: usize, ch: char) {
-        self.lines[line_idx].insert(col, ch);
+        let line = &mut self.lines[line_idx];
+        let byte_idx = char_col_to_byte_idx(line, col);
+        line.insert(byte_idx, ch);
     }
 
     /// Elimina el carácter antes de la posición especificada
@@ -87,12 +89,16 @@ impl TextBuffer {
     /// # Retorna
     /// `true` si se eliminó un carácter, `false` si no había nada que eliminar
     pub fn delete_char(&mut self, line_idx: usize, col: usize) -> bool {
-        if col > 0 {
-            self.lines[line_idx].remove(col - 1);
-            true
-        } else {
-            false
+        if col == 0 {
+            return false;
         }
+
+        let line = &mut self.lines[line_idx];
+        let byte_start = char_col_to_byte_idx(line, col - 1);
+        let byte_end = char_col_to_byte_idx(line, col);
+
+        line.replace_range(byte_start..byte_end, "");
+        true
     }
 
     /// Une la línea actual con la anterior
@@ -121,11 +127,12 @@ impl TextBuffer {
     /// # Retorna
     /// Una tupla con (nuevo_line_idx, nueva_col) para el cursor
     pub fn split_line(&mut self, line_idx: usize, col: usize) -> (usize, usize) {
-        let current_line = &self.lines[line_idx];
-        let right_text = current_line[col..].to_string();
+        let line = &mut self.lines[line_idx];
+        let byte_idx = char_col_to_byte_idx(line, col);
 
-        self.lines[line_idx].truncate(col);
-        self.lines.insert(line_idx + 1, right_text);
+        let right_txt = line[byte_idx..].to_string();
+        self.lines[line_idx].truncate(byte_idx);
+        self.lines.insert(line_idx + 1, right_txt);
 
         (line_idx + 1, 0)
     }
@@ -155,6 +162,12 @@ impl Default for TextBuffer {
     }
 }
 
+fn char_col_to_byte_idx(s: &str, col: usize) -> usize {
+    s.char_indices()
+        .nth(col)
+        .map(|(i, _)| i)
+        .unwrap_or_else(|| s.len())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
