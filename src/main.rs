@@ -7,7 +7,10 @@ use std::{
 };
 use termion::event::Key;
 
-use crate::terminal::{clear_screen, keys, message, request_input};
+use crate::{
+    search::SearchState,
+    terminal::{clear_screen, keys, message, request_input},
+};
 
 // Estructura que representa coincidencia de busqueda
 #[derive(Clone, Debug)]
@@ -26,9 +29,7 @@ struct Editor {
     window_sizes: (u16, u16),
     offset_row: usize,
     offset_col: usize,
-    search_query: Option<String>, // Texto que estamos buscando actualmente
-    search_matches: Vec<Match>,   // Todas las coincidencias encontradas
-    current_match_index: Option<usize>, // En cual coincidencia estamos posicionados
+    search: SearchState,
 }
 
 impl Editor {
@@ -44,9 +45,7 @@ impl Editor {
             window_sizes,
             offset_row: 0,
             offset_col: 0,
-            search_query: None,
-            search_matches: Vec::new(),
-            current_match_index: None,
+            search: SearchState::new(),
         }
     }
 
@@ -204,91 +203,49 @@ impl Editor {
     }
 
     fn search(&mut self, query: &str) {
-        // Si la busqueda está vacia, limpiar y salir
+        let count = self.search.search(query, &self.lines);
+
         if query.is_empty() {
-            self.search_query = None;
-            self.search_matches.clear();
-            self.current_match_index = None;
             self.state_msg = message::SEARCH_CANCELLED.to_string();
             return;
         }
 
-        // Guardar consulta y limpiar coincidencias
-        self.search_query = Some(query.to_string());
-        self.search_matches.clear();
-
-        for (line_idx, line) in self.lines.iter().enumerate() {
-            let mut start_pos = 0;
-
-            // Este bucle continúa buscando hasta que no encuentre más coincidencias
-            while let Some(found_pos) = line[start_pos..].find(query) {
-                // Calcular la posicion en la linea completa
-                let current_pos = start_pos + found_pos;
-
-                self.search_matches.push(Match {
-                    line: line_idx,
-                    start_col: current_pos,
-                    end_col: current_pos + query.len(),
-                });
-
-                start_pos = current_pos + 1;
-            }
-        }
-
-        // Si se encuentra coincidencias, mover a la primera
-        if !self.search_matches.is_empty() {
-            self.current_match_index = Some(0);
+        if count > 0 {
             self.jump_to_current_match();
-            self.state_msg = format!(
-                "Encontradas {} coincidencias de '{}'",
-                self.search_matches.len(),
-                query
-            );
+            self.state_msg = format!("Encontradas {} coincidencias de '{}'", count, query);
         } else {
-            self.current_match_index = None;
             self.state_msg = format!("No se encontró '{}'", query);
         }
     }
 
     fn jump_to_current_match(&mut self) {
-        if let Some(idx) = self.current_match_index {
-            if let Some(m) = self.search_matches.get(idx) {
-                // Mover el cursor al inicio de la coincidencia
-                self.cursor_y = m.line;
-                self.cursor_x = m.start_col;
-
+        if let Some(m) = self.search.current_match() {
+            self.cursor_y = m.line;
+            self.cursor_x = m.start_col;
+            if let Some(idx) = self.search.current_index() {
                 self.state_msg = format!(
-                    "Coincidencias {}/{}: '{}'",
+                    "Coincidencia {}/{}: '{}'",
                     idx + 1,
-                    self.search_matches.len(),
-                    self.search_query.as_ref().unwrap_or(&String::new())
+                    self.search.match_count(),
+                    self.search.query().unwrap_or(&String::new())
                 );
             }
         }
     }
 
     fn next_match(&mut self) {
-        if self.search_matches.is_empty() {
-            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
-            return;
-        }
-
-        if let Some(current_idx) = self.current_match_index {
-            self.current_match_index = Some((current_idx + 1) % self.search_matches.len());
+        if self.search.next_match().is_some() {
             self.jump_to_current_match();
+        } else {
+            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
         }
     }
 
     fn previous_match(&mut self) {
-        if self.search_matches.is_empty() {
-            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
-            return;
-        }
-
-        if let Some(current_idx) = self.current_match_index {
-            let total_matches = self.search_matches.len();
-            self.current_match_index = Some((current_idx + total_matches - 1) % total_matches);
+        if self.search.previous_match().is_some() {
             self.jump_to_current_match();
+        } else {
+            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
         }
     }
 
@@ -372,12 +329,12 @@ impl Editor {
             let visible_line = &line[start_col..];
 
             // Si hay una busqueda activa resaltar las coincidencias
-            if let Some(query) = &self.search_query {
+            if let Some(_query) = self.search.query() {
                 let mut current_pos = 0;
                 let mut highlighted_line = String::new();
 
                 // Buscar todas las coincidencias en esta linea que esten visibles
-                for m in &self.search_matches {
+                for m in self.search.matches() {
                     if m.line == i && m.start_col >= start_col {
                         // Añadir texto normal antes de la coincidencia
                         let text_before_len = m

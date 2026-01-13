@@ -47,6 +47,11 @@ impl SearchState {
         &self.matches
     }
 
+    /// Obtener el indice de la coincidencia actual
+    pub fn current_index(&mut self) -> Option<usize> {
+        self.current_index
+    }
+
     /// Obtener la coincidencia actual
     pub fn current_match(&self) -> Option<&Match> {
         self.current_index.and_then(|idx| self.matches.get(idx))
@@ -191,4 +196,3 @@ mod tests {
         assert_eq!(state.current_index, Some(0));
     }
 }
-
