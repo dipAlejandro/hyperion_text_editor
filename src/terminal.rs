@@ -19,7 +19,7 @@ pub mod keys {
 }
 
 // Constates para manejar el estado por defecto
-pub mod message {
+pub mod messages {
     pub const DEFAULT_STATUS: &str = "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
     pub const OPEN_CANCELLED: &str = "Apertura cancelada";

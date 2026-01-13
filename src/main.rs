@@ -1,27 +1,18 @@
+mod buffer;
 mod search;
 mod terminal;
 
-use std::{
-    fs,
-    io::{self, Write},
-};
+use std::io::Write;
 use termion::event::Key;
 
 use crate::{
+    buffer::TextBuffer,
     search::SearchState,
-    terminal::{clear_screen, keys, message, request_input},
+    terminal::{clear_screen, keys, messages, request_input},
 };
 
-// Estructura que representa coincidencia de busqueda
-#[derive(Clone, Debug)]
-struct Match {
-    line: usize,      // En que linea está la coincidencia
-    start_col: usize, // En que columna empieza
-    end_col: usize,   // En que columna termina
-}
-
 struct Editor {
-    lines: Vec<String>,
+    buffer: TextBuffer,
     cursor_x: usize,
     cursor_y: usize,
     filename: Option<String>,
@@ -37,11 +28,11 @@ impl Editor {
         let window_sizes = termion::terminal_size().unwrap_or((80, 24));
 
         Editor {
-            lines: vec![String::new()],
+            buffer: TextBuffer::new(),
             cursor_x: 0,
             cursor_y: 0,
             filename: None,
-            state_msg: message::DEFAULT_STATUS.to_string(),
+            state_msg: messages::DEFAULT_STATUS.to_string(),
             window_sizes,
             offset_row: 0,
             offset_col: 0,
@@ -50,19 +41,9 @@ impl Editor {
     }
 
     fn open_file(&mut self, path: &str) {
-        // Intentar leer el archivo completo como un string
-        match fs::read_to_string(path) {
-            Ok(content) => {
-                // Si se logra, dividir el contenido en lineas
-                // El collect() convierte el iterador en un Vec<String>
-                self.lines = content.lines().map(|line| line.to_string()).collect();
-
-                // Si el archivo esta vacio asegurar tener al menos una linea
-                if self.lines.is_empty() {
-                    self.lines.push(String::new());
-                }
-
-                // Guardar el nombre del archivo y resetear el cursor
+        match TextBuffer::from_file(path) {
+            Ok(buffer) => {
+                self.buffer = buffer;
                 self.filename = Some(path.to_string());
                 self.cursor_x = 0;
                 self.cursor_y = 0;
@@ -77,10 +58,8 @@ impl Editor {
     }
 
     fn save_file(&mut self, path: &str) {
-        let content = self.lines.join("\n");
-
         //Intentar escribir el contenido del archivo
-        match fs::write(path, content) {
+        match self.buffer.save_to_file(path) {
             Ok(_) => {
                 self.filename = Some(path.to_string());
                 self.state_msg = format!("Archivo '{}' guardado correctamente.", path);
@@ -92,36 +71,26 @@ impl Editor {
     }
 
     fn insert_char(&mut self, c: char) {
-        let current_line = &mut self.lines[self.cursor_y];
-        current_line.insert(self.cursor_x, c);
+        self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
 
         self.cursor_x += 1;
     }
 
     fn new_line(&mut self) {
-        let current_line = &self.lines[self.cursor_y];
-        let right_txt = current_line[self.cursor_x..].to_string();
-
-        self.lines[self.cursor_y].truncate(self.cursor_x);
-
-        self.lines.insert(self.cursor_y + 1, right_txt);
-
-        self.cursor_x = 0;
-        self.cursor_y += 1;
+        let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
+        self.cursor_y = new_y;
+        self.cursor_x = new_x;
     }
 
     fn delete_char(&mut self) {
-        if self.cursor_x > 0 {
-            // Si no estamos al inicio de la línea, borramos el carácter anterior
-            self.lines[self.cursor_y].remove(self.cursor_x - 1);
+        if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
+            // Se eliminó un carácter en la misma línea
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
-            // Si estamos al inicio de la línea pero no en la primera línea
-            // juntamos esta línea con la anterior
-            let current_line = self.lines.remove(self.cursor_y);
+            // Necesitamos unir con la línea anterior
+            let prev_len = self.buffer.join_with_previous(self.cursor_y);
             self.cursor_y -= 1;
-            self.cursor_x = self.lines[self.cursor_y].len();
-            self.lines[self.cursor_y].push_str(&current_line);
+            self.cursor_x = prev_len;
         }
     }
 
@@ -129,22 +98,16 @@ impl Editor {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
             // Ajustamos cursor_x si la nueva línea es más corta
-            let line_length = self.lines[self.cursor_y].len();
-            if self.cursor_x > line_length {
-                self.cursor_x = line_length;
-            }
+            self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
         }
     }
 
     fn move_down(&mut self) {
-        if self.cursor_y < self.lines.len() - 1 {
+        if self.cursor_y < self.buffer.line_count() - 1 {
             self.cursor_y += 1;
 
             // Ajustamos cursor_x si la nueva línea es más corta
-            let line_length = self.lines[self.cursor_y].len();
-            if self.cursor_x > line_length {
-                self.cursor_x = line_length;
-            }
+            self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
         }
     }
 
@@ -154,15 +117,15 @@ impl Editor {
         } else if self.cursor_y > 0 {
             // Si estamos al inicio de una línea, vamos al final de la línea anterior
             self.cursor_y -= 1;
-            self.cursor_x = self.lines[self.cursor_y].len();
+            self.cursor_x = self.buffer.line_length(self.cursor_y);
         }
     }
 
     fn move_right(&mut self) {
-        let line_length = self.lines[self.cursor_y].len();
+        let line_length = self.buffer.line_length(self.cursor_y);
         if self.cursor_x < line_length {
             self.cursor_x += 1;
-        } else if self.cursor_y < self.lines.len() - 1 {
+        } else if self.cursor_y < self.buffer.line_count() - 1 {
             // Si estamos al final de una línea, vamos al inicio de la siguiente
             self.cursor_y += 1;
             self.cursor_x = 0;
@@ -186,7 +149,7 @@ impl Editor {
 
         // Calcular el ancho del area de numeros de linea
         // Necesitamos saber cuantos digitos tiene el numero de linea mas alto
-        let line_num_digits = self.lines.len().to_string().len();
+        let line_num_digits = self.buffer.line_count().to_string().len();
         let line_num_width = line_num_digits + 2;
 
         // Calcular cuantas columnas tenemos disponibles para el texto
@@ -203,10 +166,10 @@ impl Editor {
     }
 
     fn search(&mut self, query: &str) {
-        let count = self.search.search(query, &self.lines);
+        let count = self.search.search(query, self.buffer.lines());
 
         if query.is_empty() {
-            self.state_msg = message::SEARCH_CANCELLED.to_string();
+            self.state_msg = messages::SEARCH_CANCELLED.to_string();
             return;
         }
 
@@ -237,7 +200,7 @@ impl Editor {
         if self.search.next_match().is_some() {
             self.jump_to_current_match();
         } else {
-            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
         }
     }
 
@@ -245,7 +208,7 @@ impl Editor {
         if self.search.previous_match().is_some() {
             self.jump_to_current_match();
         } else {
-            self.state_msg = message::NO_ACTIVE_SEARCH.to_string();
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
         }
     }
 
@@ -256,12 +219,12 @@ impl Editor {
         // Validar que la línea existe
         // Recordar que coords.0 es base-1 (como lo ve el usuario)
         // pero internamente trabajamos con base-0
-        if coords.0 >= self.lines.len() {
+        if !self.buffer.is_valid_line(coords.0) {
             // La línea no existe, mostrar error y no mover el cursor
             self.state_msg = format!(
                 "Línea {} no existe. El documento tiene {} líneas",
                 coords.0 + 1,
-                self.lines.len()
+                self.buffer.line_count()
             );
             return;
         }
@@ -270,7 +233,7 @@ impl Editor {
         self.cursor_y = coords.0;
 
         // Ahora validar la columna basándonos en la línea donde acabamos de posicionar el cursor
-        let line_length = self.lines[self.cursor_y].len();
+        let line_length = self.buffer.line_length(self.cursor_y);
 
         if coords.1 >= line_length {
             // Si la columna está fuera de rango, ir al final de la línea
@@ -299,13 +262,13 @@ impl Editor {
 
         // Calcular ancho necesario para los numero de linea
         // Esto depende de cuantas lineas tiene el documento en total
-        let line_num_digits = self.lines.len().to_string().len();
+        let line_num_digits = self.buffer.line_count().to_string().len();
         let line_num_width = line_num_digits + 2;
 
         // Iterar solo sobre las lineas que estan actualmente visibles
         // self.offset_row nos dice cual es la primera linea visible
         let start = self.offset_row;
-        let end = (self.offset_row + visible_lines).min(self.lines.len());
+        let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
         for i in start..end {
             let line_num = i + 1;
@@ -324,12 +287,12 @@ impl Editor {
             .unwrap();
 
             // Obtenemos la porcion visible  de la linea considerando el scroll horizontal
-            let line = &self.lines[i];
+            let line = &self.buffer.lines()[i];
             let start_col = self.offset_col.min(line.len());
             let visible_line = &line[start_col..];
 
             // Si hay una busqueda activa resaltar las coincidencias
-            if let Some(_query) = self.search.query() {
+            if self.search.is_active() {
                 let mut current_pos = 0;
                 let mut highlighted_line = String::new();
 
@@ -386,7 +349,7 @@ impl Editor {
         let info_position = format!(
             "Linea {}/{}, Col {}",
             self.cursor_y + 1,
-            self.lines.len(),
+            self.buffer.line_count(),
             self.cursor_x + 1
         );
 
@@ -432,7 +395,6 @@ impl Editor {
 
 fn main() {
     let mut stdout = terminal::init_raw_mode().unwrap();
-    let stdin = io::stdin();
 
     let mut editor = Editor::new();
 
@@ -454,7 +416,7 @@ fn main() {
         // Esto hace que los mensajes temporales desaparezcan después de cualquier acción
 
         if !editor.state_msg.starts_with("Ctrl+") {
-            editor.state_msg = message::DEFAULT_STATUS.to_string();
+            editor.state_msg = messages::DEFAULT_STATUS.to_string();
         }
         match k.unwrap() {
             keys::QUIT => break,
@@ -466,7 +428,7 @@ fn main() {
                         // Si no hay nombre de archivo pedimos uno
                         let name = request_input(&mut stdout, "Guardar como: ");
                         if name.is_empty() {
-                            editor.state_msg = message::SAVE_CANCELLED.to_string();
+                            editor.state_msg = messages::SAVE_CANCELLED.to_string();
                             editor.write(&mut stdout);
                             continue;
                         }
@@ -481,7 +443,7 @@ fn main() {
                 if !path.is_empty() {
                     editor.open_file(&path);
                 } else {
-                    editor.state_msg = message::OPEN_CANCELLED.to_string();
+                    editor.state_msg = messages::OPEN_CANCELLED.to_string();
                 }
             }
 
@@ -501,7 +463,7 @@ fn main() {
 
                 // Verificar que tenemos exactamente dos partes
                 if parts.len() != 2 {
-                    editor.state_msg = message::INVALID_FORMAT.to_string();
+                    editor.state_msg = messages::INVALID_FORMAT.to_string();
                     editor.write(&mut stdout);
                     continue;
                 }
@@ -514,14 +476,14 @@ fn main() {
                     (Ok(line), Ok(col)) => {
                         // Verificar que los números no sean cero (el usuario ingresa base-1)
                         if line == 0 || col == 0 {
-                            editor.state_msg = message::LINES_START_AT_ONE.to_string();
+                            editor.state_msg = messages::LINES_START_AT_ONE.to_string();
                         } else {
                             // Convertir de base-1 (usuario) a base-0 (interno)
                             editor.go_to_line((line - 1, col - 1));
                         }
                     }
                     _ => {
-                        editor.state_msg = message::INVALID_NUMBERS.to_string();
+                        editor.state_msg = messages::INVALID_NUMBERS.to_string();
                     }
                 }
             }
