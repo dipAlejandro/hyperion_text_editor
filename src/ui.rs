@@ -1,6 +1,6 @@
-use std::io::Write;
-
 use crate::search::SearchState;
+use std::fmt::Write as _;
+use std::io::Write;
 
 /// Renderiza los numeros de linea en color cyan
 ///
@@ -12,11 +12,12 @@ use crate::search::SearchState;
 pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16, width: usize) {
     write!(
         stdout,
-        "{}{}{}{}",
+        "{}{}{:>width$} {}",
         termion::cursor::Goto(1, row),
         termion::color::Fg(termion::color::Cyan),
-        format!("{:>width$} ", line_number, width = width),
-        termion::color::Fg(termion::color::Reset)
+        line_number,
+        termion::color::Fg(termion::color::Reset),
+        width = width
     )
     .unwrap();
 }
@@ -89,12 +90,14 @@ fn highlight_matches(
         let match_end = m.end_col.saturating_sub(start_col).min(visible_line.len());
 
         if match_start < visible_line.len() && match_end > match_start {
-            highlighted_line.push_str(&format!(
+            write!(
+                highlighted_line,
                 "{}{}{}",
                 termion::color::Bg(termion::color::Yellow),
                 &visible_line[match_start..match_end],
                 termion::color::Bg(termion::color::Reset)
-            ));
+            )
+            .unwrap();
             current_pos = match_end;
         }
     }
@@ -125,18 +128,18 @@ pub fn render_status_bar<W: Write>(
     cursor_col: usize,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
-    let position_info = format!("Linea {}/{}, Col {}", cursor_line, total_lines, cursor_col);
-
     write!(
         stdout,
-        "{}{}{}{}",
+        "{}{}{} | Linea {}/{}, Col {}{}",
         termion::cursor::Goto(1, row),
         termion::style::Invert,
-        format!("{} | {}", file_info, position_info),
+        file_info,
+        cursor_line,
+        total_lines,
+        cursor_col,
         termion::style::Reset
     )
     .unwrap();
-
     // Limpiar cualquier texto residual
     write!(stdout, "{}", termion::clear::AfterCursor).unwrap();
 }

@@ -48,7 +48,7 @@ impl SearchState {
     }
 
     /// Obtener el indice de la coincidencia actual
-    pub fn current_index(&mut self) -> Option<usize> {
+    pub fn current_index(&self) -> Option<usize> {
         self.current_index
     }
 
@@ -148,13 +148,6 @@ impl SearchState {
         } else {
             None
         }
-    }
-
-    /// Limpia el estado de búsqueda
-    pub fn clear(&mut self) {
-        self.query = None;
-        self.matches.clear();
-        self.current_index = None;
     }
 }
 
