@@ -1,17 +1,22 @@
+//! Módulo principal del editor de texto
+//!
+//! Contiene la estructura `Editor` que coordina todas las operaciones
+//! del editor incluyendo navegación, edición, búsqueda y renderizado.
+
 use std::io::Write;
 
 use crate::{buffer::TextBuffer, search::SearchState, terminal::messages, ui};
 
 pub struct Editor {
-    pub buffer: TextBuffer,
-    pub cursor_x: usize,
-    pub cursor_y: usize,
+    buffer: TextBuffer,
+    cursor_x: usize,
+    cursor_y: usize,
     pub filename: Option<String>,
     pub state_msg: String,
-    pub window_sizes: (u16, u16),
-    pub offset_row: usize,
-    pub offset_col: usize,
-    pub search: SearchState,
+    window_sizes: (u16, u16),
+    offset_row: usize,
+    offset_col: usize,
+    search: SearchState,
 }
 
 impl Editor {
