@@ -1,4 +1,5 @@
 mod buffer;
+mod cli;
 mod editor;
 mod search;
 mod terminal;
@@ -8,33 +9,50 @@ use std::io::Write;
 use termion::event::Key;
 
 use crate::{
+    cli::Args,
     editor::Editor,
     terminal::{clear_screen, keys, messages, request_input},
 };
 
 fn main() {
+    let args = Args::parse_args();
+
     let mut stdout = terminal::init_raw_mode().unwrap();
 
     let mut editor = Editor::new();
 
+    // Si se proporcionó un archivo, intentar abrirlo o preparar para crearlo
+    if let Some(filepath) = args.file {
+        if std::path::Path::new(&filepath).exists() {
+            editor.open_file(&filepath);
+        } else {
+            editor.filename = Some(filepath.clone());
+            editor.state_msg = format!("Nuevo archivo: '{}' (Ctrl+S para guardar)", filepath);
+        }
+    } else {
+        write!(
+            stdout,
+            "{}{}Editor de Texto - Presiona 'q' para salir \r\n\r\n",
+            termion::clear::All,
+            termion::cursor::Goto(1, 1)
+        )
+        .unwrap();
+
+        stdout.flush().unwrap();
+    }
     editor.write(&mut stdout);
-
-    write!(
-        stdout,
-        "{}{}Editor de Texto - Presiona 'q' para salir \r\n\r\n",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1)
-    )
-    .unwrap();
-
-    stdout.flush().unwrap();
 
     // Leer entrada de usuario
     for k in terminal::read_keys() {
         // Limpiar el mensaje de estado antes de procesar la siguiente tecla
         // Esto hace que los mensajes temporales desaparezcan después de cualquier acción
-
-        if !editor.state_msg.starts_with("Ctrl+") {
+        if !editor.state_msg.starts_with("Ctrl+")
+            && !editor.state_msg.starts_with("Nuevo archivo:")
+            && !editor.state_msg.starts_with("Archivo '")
+            && !editor.state_msg.starts_with("Encontradas")
+            && !editor.state_msg.starts_with("Coincidencia")
+            && !editor.state_msg.starts_with("Posicionado")
+        {
             editor.state_msg = messages::DEFAULT_STATUS.to_string();
         }
         match k.unwrap() {
