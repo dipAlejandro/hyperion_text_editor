@@ -117,27 +117,3 @@ Si querés colaborar:
 ## 📜 Licencia
 
 Este proyecto está bajo la licencia **MIT**.
-
-````
-
-# Hyperion 🚀
-
-Editor de texto minimalista para terminal escrito en Rust.
-
-## Instalación
-```bash
-cargo install --path .
-````
-
-## Uso
-
-```bash
-# Abrir archivo
-hyperion archivo.txt
-
-# Crear archivo nuevo
-hyperion nuevo.py
-
-# Editor vacío
-hyperion
-```
