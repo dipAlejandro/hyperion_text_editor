@@ -162,7 +162,10 @@ impl Editor {
     }
 
     pub fn search(&mut self, query: &str) {
-        let count = self.search.search(query, self.buffer.lines());
+        //TODO: hacer que SearchState trabaje con iteradores o usar slices de Ropey
+        let lines: Vec<String> = self.buffer.iter_lines().collect();
+
+        let count = self.search.search(query, &lines);
 
         if query.is_empty() {
             self.state_msg = messages::SEARCH_CANCELLED.to_string();
@@ -270,8 +273,8 @@ impl Editor {
             ui::render_line_number(stdout, line_num, window_row, line_num_digits);
 
             // Dibujar contenido de la línea con resaltado de búsqueda si aplica
-            let line = &self.buffer.lines()[i];
-            ui::render_line_content(stdout, line, i, self.offset_col, &self.search);
+            let line = self.buffer.line(i);
+            ui::render_line_content(stdout, &line, i, self.offset_col, &self.search);
         }
 
         // Dibujar barra de estado
