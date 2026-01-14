@@ -2,14 +2,11 @@ name: Release binaries
 
 on:
   release:
-    # aceptar tanto created como published para cubrir todos los casos
     types: [published]
   push:
-    # opcional: también responder a push de tags v*
     tags:
       - "v*"
 
-# permisos para poder subir assets al release
 permissions:
   contents: write
 
@@ -38,45 +35,20 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Show built files (debug)
-        run: ls -la target/${{ matrix.target }}/release || true
-
-      - name: Archive binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Archive binary
         run: |
           cd target/${{ matrix.target }}/release
-          # asegura que el binario exista antes de empaquetar
           if [ -f hyperion ]; then
             tar czf hyperion-${{ matrix.target }}.tar.gz hyperion
           else
-            echo "ERROR: binary 'hyperion' not found in $(pwd)"
+            echo "ERROR: binary 'hyperion' not found"
             ls -la
             exit 1
           fi
 
-      - name: Archive binary (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          cd target/${{ matrix.target }}/release
-          if (Test-Path .\hyperion.exe) {
-            Compress-Archive -Path .\hyperion.exe -DestinationPath hyperion-${{ matrix.target }}.zip
-          } else {
-            Write-Host "ERROR: binary 'hyperion.exe' not found in $(Get-Location)"
-            Get-ChildItem -Force
-            exit 1
-          }
-
-      - name: List archives (debug)
-        run: ls -la target/${{ matrix.target }}/release || true
-
       - name: Upload assets to release
-        # sube archivos al release asociado al evento (requiere permissions.contents write)
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: |
-            target/${{ matrix.target }}/release/*.tar.gz
-            target/${{ matrix.target }}/release/*.zip
-
+          files: target/${{ matrix.target }}/release/*.tar.gz
