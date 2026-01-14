@@ -1,5 +1,5 @@
 [package]
-name = "hyperion"
+name = "hyperion_text_editor"
 version = "0.1.0"
 edition = "2024"
 authors = ["Alejandro Dip <dip.alejandro.damian@gmail.com>"]
@@ -8,6 +8,10 @@ license = "MIT"
 readme = "README.md"
 keywords = ["editor", "terminal", "text", "cli"]
 categories = ["command-line-utilities", "text-editors"]
+
+[[bin]]
+name = "hyperion"
+path = "src/main.rs"
 
 [dependencies]
 termion = "4.0.6"
