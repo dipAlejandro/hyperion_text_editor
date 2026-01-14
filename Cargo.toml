@@ -2,6 +2,12 @@
 name = "hyperion"
 version = "0.1.0"
 edition = "2024"
+authors = ["Alejandro Dip <dip.alejandro.damian@gmail.com>"]
+description = "Editor de texto minimalista para terminal"
+license = "MIT"
+readme = "README.md"
+keywords = ["editor", "terminal", "text", "cli"]
+categories = ["command-line-utilities", "text-editors"]
 
 [dependencies]
 termion = "4.0.6"
