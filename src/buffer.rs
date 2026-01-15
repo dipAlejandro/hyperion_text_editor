@@ -33,10 +33,17 @@ impl TextBuffer {
     }
 
     /// Obtiene la linea perteneciente al indice indicado (sin \n final)
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea (base 0)
+    ///
+    /// # Retorna
+    /// La linea como String, sin el carácter de salto de línea
     pub fn line(&self, idx: usize) -> String {
         let line = self.rope.line(idx);
         let s = line.to_string();
 
+        // Quitar el \n final si existe
         if s.ends_with('\n') {
             s[..s.len() - 1].to_string()
         } else {
@@ -53,34 +60,54 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
-    /// Obtener longitud total en chars
-    pub fn char_count(&self) -> usize {
-        self.rope.len_chars()
-    }
-
     /// Obtiene la longitud de una línea específica (sin contar el \n final)
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea (base 0)
+    ///
+    /// # Retorna
+    /// Longitud de la línea en caracteres, excluyendo el salto de línea
     pub fn line_length(&self, line_idx: usize) -> usize {
         let line = self.rope.line(line_idx);
         let len = line.len_chars();
 
+        // Si la línea termina con \n, no contarlo en la longitud
         if len > 0 && line.char(len - 1) == '\n' {
             len - 1
         } else {
             len
         }
     }
-
     /// Inserta un carácter en una posición específica
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea donde insertar
+    /// * `col` - Columna donde insertar el carácter
+    /// * `ch` - Carácter a insertar
     pub fn insert_char(&mut self, line_idx: usize, col: usize, ch: char) {
+        // Obtener la posición de inicio de la línea en chars
         let line_start = self.rope.line_to_char(line_idx);
+
+        // Obtener la longitud real de la línea (sin \n)
         let line_len = self.line_length(line_idx);
+
+        // Asegurar que col esté dentro de los límites
         let safe_col = col.min(line_len);
+
+        // Calcular la posición absoluta en el rope
         let char_idx = line_start + safe_col;
 
+        // Insertar el carácter
         self.rope.insert_char(char_idx, ch);
     }
-
     /// Elimina el carácter antes de la posición especificada
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea
+    /// * `col` - Columna donde está el cursor
+    ///
+    /// # Retorna
+    /// `true` si se eliminó un carácter, `false` si no había nada que eliminar
     pub fn delete_char(&mut self, line_idx: usize, col: usize) -> bool {
         if col == 0 {
             return false;
@@ -99,29 +126,43 @@ impl TextBuffer {
 
         true
     }
-
     /// Une la línea actual con la anterior
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea a unir con la anterior
+    ///
+    /// # Retorna
+    /// La longitud de la línea anterior antes de unir (nueva posición del cursor)
     pub fn join_with_previous(&mut self, line_idx: usize) -> usize {
         if line_idx == 0 {
             return 0;
         }
 
         let prev_len = self.line_length(line_idx - 1);
+
+        // Encontrar el \n al final de la línea anterior
         let prev_line_start = self.rope.line_to_char(line_idx - 1);
         let newline_pos = prev_line_start + prev_len;
 
+        // Eliminar el \n
         self.rope.remove(newline_pos..newline_pos + 1);
 
         prev_len
     }
-
     /// Divide una línea en dos en la posición del cursor
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea a dividir
+    /// * `col` - Columna donde dividir
+    ///
+    /// # Retorna
+    /// Una tupla con (nuevo_line_idx, nueva_col) para el cursor
     pub fn split_line(&mut self, line_idx: usize, col: usize) -> (usize, usize) {
         let line_start = self.rope.line_to_char(line_idx);
         let line_len = self.line_length(line_idx);
         let safe_col = col.min(line_len);
-        let char_idx = line_start + safe_col;
 
+        let char_idx = line_start + safe_col;
         self.rope.insert_char(char_idx, '\n');
 
         (line_idx + 1, 0)
