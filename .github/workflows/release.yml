@@ -24,6 +24,8 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Archive binary
+      - name: Archive binary (unix)
         run: |
           cd target/${{ matrix.target }}/release
           if [ -f hyperion ]; then
@@ -46,9 +48,28 @@ jobs:
             exit 1
           fi
 
+      - name: Archive binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $path = "target/${{ matrix.target }}/release"
+          $exe = "$path/hyperion.exe"
+
+          if (Test-Path $exe) {
+            Compress-Archive `
+            -Path $exe `
+            -DestinationPath "$path/hyperion-${{ matrix.target }}.zip"
+          } else {
+            Write-Error "ERROR: binary 'hyperion.exe' not found"  
+            Get-ChildItem $path
+            exit 1
+          }
+
       - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: target/${{ matrix.target }}/release/*.tar.gz
+          files: |
+            target/${{ matrix.target }}/release/*.tar.gz
+            target/${{ matrix.target }}/release/*.zip
