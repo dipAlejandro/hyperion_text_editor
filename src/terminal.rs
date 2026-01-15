@@ -1,24 +1,46 @@
+/// Terminal.rs
 use std::io::{self, Write};
 
-use termion::{event::Key, input::TermRead, raw::IntoRawMode, raw::RawTerminal};
-
-// Tipo alias para simplificar la firma de funciones que escriben a stdout
-pub type StdoutRaw = RawTerminal<io::Stdout>;
+use crossterm::{
+    ExecutableCommand, QueueableCommand, cursor,
+    event::{self, Event, KeyCode, KeyEvent},
+    terminal::{self, ClearType},
+};
 
 // Constantes para declarar teclas de control
 pub mod keys {
-    use termion::event::Key;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    pub const QUIT: Key = Key::Ctrl('q');
-    pub const SAVE: Key = Key::Ctrl('s');
-    pub const OPEN: Key = Key::Ctrl('o');
-    pub const SEARCH: Key = Key::Ctrl('f');
-    pub const NEXT_MATCH: Key = Key::Ctrl('n');
-    pub const PREV_MATCH: Key = Key::Ctrl('p');
-    pub const GOTO_LINE: Key = Key::Ctrl('g');
+    pub fn is_quit(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('q')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_save(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('s')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_open(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('o')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_search(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('f')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_next_match(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('n')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_prev_match(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('p')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_goto_line(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('g')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
 }
 
-// Constates para manejar el estado por defecto
+// Constantes para manejar el estado por defecto
 pub mod messages {
     pub const DEFAULT_STATUS: &str = "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
@@ -30,12 +52,24 @@ pub mod messages {
     pub const LINES_START_AT_ONE: &str = "Las líneas y columnas empiezan en 1";
 }
 
-pub fn init_raw_mode() -> io::Result<StdoutRaw> {
-    io::stdout().into_raw_mode()
+pub fn init_raw_mode() -> io::Result<io::Stdout> {
+    terminal::enable_raw_mode()?;
+    Ok(io::stdout())
 }
 
-pub fn read_keys() -> termion::input::Keys<io::Stdin> {
-    io::stdin().keys()
+pub fn cleanup() -> io::Result<()> {
+    terminal::disable_raw_mode()?;
+    io::stdout().execute(cursor::Show)?;
+    Ok(())
+}
+
+/// Lee el siguiente evento de teclado
+pub fn read_key() -> io::Result<KeyEvent> {
+    loop {
+        if let Event::Key(key) = event::read()? {
+            return Ok(key);
+        }
+    }
 }
 
 /// Solicita entrada del usuario con un prompt
@@ -47,62 +81,50 @@ pub fn read_keys() -> termion::input::Keys<io::Stdin> {
 /// # Retorna
 /// El texto ingresado por el usuario
 pub fn request_input<W: Write>(stdout: &mut W, prompt: &str) -> String {
-    let stdin = io::stdin();
-
     let mut user_input = String::new();
 
-    // Obtener la altura de la terminal,
-    let (_, height) = termion::terminal_size().unwrap_or((80, 24));
+    // Obtener la altura de la terminal
+    let (_, height) = terminal::size().unwrap_or((80, 24));
 
-    write!(
-        stdout,
-        "{}{}{}",
-        termion::cursor::Goto(1, height),
-        termion::clear::CurrentLine,
-        prompt
-    )
-    .unwrap();
-
+    stdout
+        .queue(cursor::MoveTo(0, height - 1))
+        .unwrap()
+        .queue(terminal::Clear(ClearType::CurrentLine))
+        .unwrap();
+    write!(stdout, "{}", prompt).unwrap();
     stdout.flush().unwrap();
 
-    for key in stdin.keys() {
-        match key.unwrap() {
-            Key::Char('\n') => break,
-            Key::Char(c) => {
+    while let Ok(key) = read_key() {
+        match key.code {
+            KeyCode::Enter => break,
+            KeyCode::Char(c) => {
                 user_input.push(c);
                 write!(stdout, "{}", c).unwrap();
                 stdout.flush().unwrap();
             }
 
-            Key::Backspace => {
+            KeyCode::Backspace => {
                 if !user_input.is_empty() {
                     user_input.pop();
-                    write!(
-                        stdout,
-                        "{} {}",
-                        termion::cursor::Left(1),
-                        termion::cursor::Left(1)
-                    )
-                    .unwrap();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
+                    write!(stdout, " ").unwrap();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
                     stdout.flush().unwrap();
                 }
             }
-
             _ => {}
         }
     }
+
     user_input
 }
 
 /// Limpiar pantalla y resetear cursor
 pub fn clear_screen<W: Write>(stdout: &mut W) {
-    write!(
-        stdout,
-        "{}{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1)
-    )
-    .unwrap();
-
+    stdout
+        .queue(terminal::Clear(ClearType::All))
+        .unwrap()
+        .queue(cursor::MoveTo(0, 0))
+        .unwrap();
     stdout.flush().unwrap();
 }
