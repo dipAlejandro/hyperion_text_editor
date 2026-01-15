@@ -5,7 +5,7 @@
 
 use std::io::Write;
 
-use termion::{clear, cursor};
+use crossterm::{cursor, terminal};
 
 use crate::{buffer::TextBuffer, search::SearchState, terminal::messages, ui};
 
@@ -23,7 +23,7 @@ pub struct Editor {
 
 impl Editor {
     pub fn new() -> Self {
-        let window_sizes = termion::terminal_size().unwrap_or((80, 24));
+        let window_sizes = terminal::size().unwrap_or((80, 24));
 
         Editor {
             buffer: TextBuffer::new(),
@@ -56,7 +56,6 @@ impl Editor {
     }
 
     pub fn save_file(&mut self, path: &str) {
-        //Intentar escribir el contenido del archivo
         match self.buffer.save_to_file(path) {
             Ok(_) => {
                 self.filename = Some(path.to_string());
@@ -70,7 +69,6 @@ impl Editor {
 
     pub fn insert_char(&mut self, c: char) {
         self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
-
         self.cursor_x += 1;
     }
 
@@ -82,10 +80,8 @@ impl Editor {
 
     pub fn delete_char(&mut self) {
         if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
-            // Se eliminó un carácter en la misma línea
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
-            // Necesitamos unir con la línea anterior
             let prev_len = self.buffer.join_with_previous(self.cursor_y);
             self.cursor_y -= 1;
             self.cursor_x = prev_len;
@@ -95,7 +91,6 @@ impl Editor {
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
-            // Ajustamos cursor_x si la nueva línea es más corta
             self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
         }
     }
@@ -103,8 +98,6 @@ impl Editor {
     pub fn move_down(&mut self) {
         if self.cursor_y < self.buffer.line_count() - 1 {
             self.cursor_y += 1;
-
-            // Ajustamos cursor_x si la nueva línea es más corta
             self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
         }
     }
@@ -113,7 +106,6 @@ impl Editor {
         if self.cursor_x > 0 {
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
-            // Si estamos al inicio de una línea, vamos al final de la línea anterior
             self.cursor_y -= 1;
             self.cursor_x = self.buffer.line_length(self.cursor_y);
         }
@@ -124,36 +116,26 @@ impl Editor {
         if self.cursor_x < line_length {
             self.cursor_x += 1;
         } else if self.cursor_y < self.buffer.line_count() - 1 {
-            // Si estamos al final de una línea, vamos al inicio de la siguiente
             self.cursor_y += 1;
             self.cursor_x = 0;
         }
     }
 
     pub fn adjust_scroll(&mut self) {
-        // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
         let visible_lines = (self.window_sizes.1 - 2) as usize;
 
-        // Si el cursor está por encima de la ventana visible, ajustamos hacia arriba
         if self.cursor_y < self.offset_row {
             self.offset_row = self.cursor_y;
         }
 
-        // Si el cursor está por debajo de la ventana visible, ajustar hacia abajo
-        // Restar 1 porque las posiciones empiezan en 0
         if self.cursor_y >= self.offset_row + visible_lines {
             self.offset_row = self.cursor_y - visible_lines + 1;
         }
 
-        // Calcular el ancho del area de numeros de linea
-        // Necesitamos saber cuantos digitos tiene el numero de linea mas alto
         let line_num_digits = self.buffer.line_count().to_string().len();
         let line_num_width = line_num_digits + 2;
-
-        // Calcular cuantas columnas tenemos disponibles para el texto
         let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
 
-        // Ajustar scroll horizontal si es necesario
         if self.cursor_x < self.offset_col {
             self.offset_col = self.cursor_x;
         }
@@ -164,9 +146,7 @@ impl Editor {
     }
 
     pub fn search(&mut self, query: &str) {
-        //TODO: hacer que SearchState trabaje con iteradores o usar slices de Ropey
         let lines: Vec<String> = self.buffer.iter_lines().collect();
-
         let count = self.search.search(query, &lines);
 
         if query.is_empty() {
@@ -213,15 +193,8 @@ impl Editor {
         }
     }
 
-    /**
-     * coord: (y, x)
-     * */
     pub fn go_to_line(&mut self, coords: (usize, usize)) {
-        // Validar que la línea existe
-        // Recordar que coords.0 es base-1 (como lo ve el usuario)
-        // pero internamente trabajamos con base-0
         if !self.buffer.is_valid_line(coords.0) {
-            // La línea no existe, mostrar error y no mover el cursor
             self.state_msg = format!(
                 "Línea {} no existe. El documento tiene {} líneas",
                 coords.0 + 1,
@@ -230,14 +203,10 @@ impl Editor {
             return;
         }
 
-        // La línea es válida, mover el cursor
         self.cursor_y = coords.0;
-
-        // Ahora validar la columna basándonos en la línea donde acabamos de posicionar el cursor
         let line_length = self.buffer.line_length(self.cursor_y);
 
         if coords.1 >= line_length {
-            // Si la columna está fuera de rango, ir al final de la línea
             self.cursor_x = line_length;
             self.state_msg = format!(
                 "Columna {} fuera de rango. Posicionado al final de la línea (columna {})",
@@ -245,7 +214,6 @@ impl Editor {
                 line_length
             );
         } else {
-            // La columna es válida
             self.cursor_x = coords.1;
             self.state_msg = format!(
                 "Posicionado en línea {}, columna {}",
@@ -256,36 +224,36 @@ impl Editor {
     }
 
     pub fn write<W: Write>(&self, stdout: &mut W) {
-        // Usamos un buffer local para construir TODO el frame y hacer un solo write()
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
-        // Ocultamos el cursor mientras renderizamos, movemos al tope y limpiamos lo que haga falta
         write!(out, "{}", cursor::Hide).unwrap();
-        write!(out, "{}", cursor::Goto(1, 1)).unwrap();
-        // Limpiamos desde aquí hacia abajo (más económico que clear::All)
-        write!(out, "{}", clear::AfterCursor).unwrap();
+        write!(out, "{}", cursor::MoveTo(0, 0)).unwrap();
+        write!(
+            out,
+            "{}",
+            terminal::Clear(terminal::ClearType::FromCursorDown)
+        )
+        .unwrap();
 
-        // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
         let visible_lines = (self.window_sizes.1 - 2) as usize;
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
 
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
-        // Renderizar cada linea visible en el buffer 'out'
         for i in start..end {
             let line_num = i + 1;
-            let window_row = (i - self.offset_row + 1) as u16;
+            let window_row = (i - self.offset_row) as u16;
             let line_num_digits = self.buffer.line_count().to_string().len();
 
-            // ui::render_* acepta un Write, así que le pasamos &mut out
-            ui::render_line_number(&mut out, line_num, window_row, line_num_digits);
+            ui::render_line_number(&mut out, line_num, window_row, line_num_width); // valor
+            // anterior:
+            // line_num_digits
             let line = self.buffer.line(i);
             ui::render_line_content(&mut out, &line, i, self.offset_col, &self.search);
         }
 
-        // Barra de estado
-        let state_row = self.window_sizes.1 - 1;
+        let state_row = self.window_sizes.1 - 2;
         ui::render_status_bar(
             &mut out,
             state_row,
@@ -295,10 +263,8 @@ impl Editor {
             self.cursor_x + 1,
         );
 
-        // Mensaje de estado (debajo de la barra)
         ui::render_message(&mut out, state_row + 1, &self.state_msg);
 
-        // Colocar cursor en su posición visual (también se escribe en 'out')
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
             self.cursor_y,
@@ -308,10 +274,8 @@ impl Editor {
         );
         ui::position_cursor(&mut out, visual_x, visual_y);
 
-        // Mostrar el cursor otra vez y volcar todo al stdout en una sola operación
         write!(out, "{}", cursor::Show).unwrap();
 
-        // Escribir todo de una vez en el stdout proporcionado por el caller
         stdout.write_all(&out).unwrap();
         stdout.flush().unwrap();
     }
