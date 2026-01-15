@@ -1,3 +1,4 @@
+use ropey::Rope;
 use std::fs;
 
 /// Representa el buffer de texto del documento
@@ -5,81 +6,100 @@ use std::fs;
 /// Un buffer contiene las líneas del documento y proporciona
 /// operaciones para manipular el texto
 pub struct TextBuffer {
-    lines: Vec<String>,
+    rope: Rope,
 }
 
 impl TextBuffer {
     pub fn new() -> Self {
-        TextBuffer {
-            lines: vec![String::new()],
-        }
+        TextBuffer { rope: Rope::new() }
     }
 
     /// Crea un buffer desde un archivo
-    ///
-    /// # Argumentos
-    /// * `path` - Ruta del archivo a cargar
-    ///
-    /// # Retorna
-    /// Result con el buffer cargado o un error de IO
     pub fn from_file(path: &str) -> std::io::Result<Self> {
-        let content = fs::read_to_string(path)?;
+        let mut content = fs::read_to_string(path)?;
 
-        let lines: Vec<String> = content.lines().map(|line| line.to_string()).collect();
+        if content.is_empty() || !content.ends_with('\n') {
+            content.push('\n');
+        }
 
-        let lines = if lines.is_empty() {
-            vec![String::new()]
-        } else {
-            lines
-        };
-        Ok(TextBuffer { lines })
+        Ok(Self {
+            rope: Rope::from_str(&content),
+        })
     }
 
     /// Guarda el buffer en un archivo
-    ///
-    /// # Argumentos
-    /// * `path` - Ruta donde guardar el archivo
     pub fn save_to_file(&self, path: &str) -> std::io::Result<()> {
-        let content = self.lines.join("\n");
-        fs::write(path, content)
+        fs::write(path, self.rope.to_string())
     }
 
-    /// Obtiene una referencia a todas las lineas
-    pub fn lines(&self) -> &[String] {
-        &self.lines
-    }
-
-    /// Obtiene el numero total de lineas
-    pub fn line_count(&self) -> usize {
-        self.lines.len()
-    }
-
-    /// Obtiene la longitud de una línea específica
+    /// Obtiene la linea perteneciente al indice indicado (sin \n final)
     ///
     /// # Argumentos
     /// * `line_idx` - Índice de la línea (base 0)
     ///
     /// # Retorna
-    /// Longitud de la línea, o 0 si el índice es inválido
-    pub fn line_length(&self, line_idx: usize) -> usize {
-        self.lines.get(line_idx).map(|l| l.len()).unwrap_or(0)
+    /// La linea como String, sin el carácter de salto de línea
+    pub fn line(&self, idx: usize) -> String {
+        let line = self.rope.line(idx);
+        let s = line.to_string();
+
+        // Quitar el \n final si existe
+        if s.ends_with('\n') {
+            s[..s.len() - 1].to_string()
+        } else {
+            s
+        }
     }
 
+    pub fn iter_lines(&self) -> impl Iterator<Item = String> + '_ {
+        (0..self.line_count()).map(|i| self.line(i))
+    }
+
+    /// Obtiene el numero total de lineas
+    pub fn line_count(&self) -> usize {
+        self.rope.len_lines()
+    }
+
+    /// Obtiene la longitud de una línea específica (sin contar el \n final)
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea (base 0)
+    ///
+    /// # Retorna
+    /// Longitud de la línea en caracteres, excluyendo el salto de línea
+    pub fn line_length(&self, line_idx: usize) -> usize {
+        let line = self.rope.line(line_idx);
+        let len = line.len_chars();
+
+        // Si la línea termina con \n, no contarlo en la longitud
+        if len > 0 && line.char(len - 1) == '\n' {
+            len - 1
+        } else {
+            len
+        }
+    }
     /// Inserta un carácter en una posición específica
     ///
     /// # Argumentos
     /// * `line_idx` - Índice de la línea donde insertar
     /// * `col` - Columna donde insertar el carácter
     /// * `ch` - Carácter a insertar
-    ///
-    /// # Panics
-    /// Si el índice de línea es inválido
     pub fn insert_char(&mut self, line_idx: usize, col: usize, ch: char) {
-        let line = &mut self.lines[line_idx];
-        let byte_idx = char_col_to_byte_idx(line, col);
-        line.insert(byte_idx, ch);
-    }
+        // Obtener la posición de inicio de la línea en chars
+        let line_start = self.rope.line_to_char(line_idx);
 
+        // Obtener la longitud real de la línea (sin \n)
+        let line_len = self.line_length(line_idx);
+
+        // Asegurar que col esté dentro de los límites
+        let safe_col = col.min(line_len);
+
+        // Calcular la posición absoluta en el rope
+        let char_idx = line_start + safe_col;
+
+        // Insertar el carácter
+        self.rope.insert_char(char_idx, ch);
+    }
     /// Elimina el carácter antes de la posición especificada
     ///
     /// # Argumentos
@@ -93,14 +113,19 @@ impl TextBuffer {
             return false;
         }
 
-        let line = &mut self.lines[line_idx];
-        let byte_start = char_col_to_byte_idx(line, col - 1);
-        let byte_end = char_col_to_byte_idx(line, col);
+        let line_len = self.line_length(line_idx);
 
-        line.replace_range(byte_start..byte_end, "");
+        if col > line_len {
+            return false;
+        }
+
+        let line_start = self.rope.line_to_char(line_idx);
+        let char_idx = line_start + col - 1;
+
+        self.rope.remove(char_idx..char_idx + 1);
+
         true
     }
-
     /// Une la línea actual con la anterior
     ///
     /// # Argumentos
@@ -108,16 +133,22 @@ impl TextBuffer {
     ///
     /// # Retorna
     /// La longitud de la línea anterior antes de unir (nueva posición del cursor)
-    ///
-    /// # Panics
-    /// Si line_idx es 0 o inválido
     pub fn join_with_previous(&mut self, line_idx: usize) -> usize {
-        let current_line = self.lines.remove(line_idx);
-        let previous_len = self.lines[line_idx - 1].len();
-        self.lines[line_idx - 1].push_str(&current_line);
-        previous_len
-    }
+        if line_idx == 0 {
+            return 0;
+        }
 
+        let prev_len = self.line_length(line_idx - 1);
+
+        // Encontrar el \n al final de la línea anterior
+        let prev_line_start = self.rope.line_to_char(line_idx - 1);
+        let newline_pos = prev_line_start + prev_len;
+
+        // Eliminar el \n
+        self.rope.remove(newline_pos..newline_pos + 1);
+
+        prev_len
+    }
     /// Divide una línea en dos en la posición del cursor
     ///
     /// # Argumentos
@@ -127,29 +158,22 @@ impl TextBuffer {
     /// # Retorna
     /// Una tupla con (nuevo_line_idx, nueva_col) para el cursor
     pub fn split_line(&mut self, line_idx: usize, col: usize) -> (usize, usize) {
-        let line = &mut self.lines[line_idx];
-        let byte_idx = char_col_to_byte_idx(line, col);
+        let line_start = self.rope.line_to_char(line_idx);
+        let line_len = self.line_length(line_idx);
+        let safe_col = col.min(line_len);
 
-        let right_txt = line[byte_idx..].to_string();
-        self.lines[line_idx].truncate(byte_idx);
-        self.lines.insert(line_idx + 1, right_txt);
+        let char_idx = line_start + safe_col;
+        self.rope.insert_char(char_idx, '\n');
 
         (line_idx + 1, 0)
     }
 
     /// Verifica si un índice de línea es válido
     pub fn is_valid_line(&self, line_idx: usize) -> bool {
-        line_idx < self.lines.len()
+        line_idx < self.line_count()
     }
 
     /// Ajusta una columna para que esté dentro de los límites de una línea
-    ///
-    /// # Argumentos
-    /// * `line_idx` - Índice de la línea
-    /// * `col` - Columna a ajustar
-    ///
-    /// # Retorna
-    /// La columna ajustada (no mayor que la longitud de la línea)
     pub fn clamp_column(&self, line_idx: usize, col: usize) -> usize {
         let line_len = self.line_length(line_idx);
         col.min(line_len)
@@ -162,12 +186,6 @@ impl Default for TextBuffer {
     }
 }
 
-fn char_col_to_byte_idx(s: &str, col: usize) -> usize {
-    s.char_indices()
-        .nth(col)
-        .map(|(i, _)| i)
-        .unwrap_or_else(|| s.len())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,7 +203,7 @@ mod tests {
         buffer.insert_char(0, 0, 'h');
         buffer.insert_char(0, 1, 'i');
 
-        assert_eq!(buffer.lines()[0], "hi");
+        assert_eq!(buffer.line(0), "hi");
     }
 
     #[test]
@@ -196,7 +214,7 @@ mod tests {
 
         let deleted = buffer.delete_char(0, 2);
         assert!(deleted);
-        assert_eq!(buffer.lines()[0], "h");
+        assert_eq!(buffer.line(0), "h");
     }
 
     #[test]
@@ -211,8 +229,8 @@ mod tests {
         let (new_line, new_col) = buffer.split_line(0, 2);
 
         assert_eq!(buffer.line_count(), 2);
-        assert_eq!(buffer.lines()[0], "he");
-        assert_eq!(buffer.lines()[1], "llo");
+        assert_eq!(buffer.line(0), "he");
+        assert_eq!(buffer.line(1), "llo");
         assert_eq!(new_line, 1);
         assert_eq!(new_col, 0);
     }
@@ -229,7 +247,7 @@ mod tests {
         let prev_len = buffer.join_with_previous(1);
 
         assert_eq!(buffer.line_count(), 1);
-        assert_eq!(buffer.lines()[0], "hiby");
+        assert_eq!(buffer.line(0), "hiby");
         assert_eq!(prev_len, 2);
     }
 }
