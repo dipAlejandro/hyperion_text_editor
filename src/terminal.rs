@@ -94,27 +94,25 @@ pub fn request_input<W: Write>(stdout: &mut W, prompt: &str) -> String {
     write!(stdout, "{}", prompt).unwrap();
     stdout.flush().unwrap();
 
-    loop {
-        match read_key() {
-            Ok(key) => match key.code {
-                KeyCode::Enter => break,
-                KeyCode::Char(c) => {
-                    user_input.push(c);
-                    write!(stdout, "{}", c).unwrap();
+    while let Ok(key) = read_key() {
+        match key.code {
+            KeyCode::Enter => break,
+            KeyCode::Char(c) => {
+                user_input.push(c);
+                write!(stdout, "{}", c).unwrap();
+                stdout.flush().unwrap();
+            }
+
+            KeyCode::Backspace => {
+                if !user_input.is_empty() {
+                    user_input.pop();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
+                    write!(stdout, " ").unwrap();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
                     stdout.flush().unwrap();
                 }
-                KeyCode::Backspace => {
-                    if !user_input.is_empty() {
-                        user_input.pop();
-                        stdout.queue(cursor::MoveLeft(1)).unwrap();
-                        write!(stdout, " ").unwrap();
-                        stdout.queue(cursor::MoveLeft(1)).unwrap();
-                        stdout.flush().unwrap();
-                    }
-                }
-                _ => {}
-            },
-            Err(_) => break,
+            }
+            _ => {}
         }
     }
 

@@ -38,12 +38,7 @@ fn main() {
     editor.write(&mut stdout);
 
     // Leer entrada de usuario
-    loop {
-        let key = match terminal::read_key() {
-            Ok(k) => k,
-            Err(_) => break,
-        };
-
+    while let Ok(key) = terminal::read_key() {
         // Limpiar el mensaje de estado antes de procesar la siguiente tecla
         if !editor.state_msg.starts_with("Ctrl+")
             && !editor.state_msg.starts_with("Nuevo archivo:")
@@ -127,7 +122,6 @@ fn main() {
         editor.adjust_scroll();
         editor.write(&mut stdout);
     }
-
     clear_screen(&mut stdout);
     terminal::cleanup().unwrap();
 }
