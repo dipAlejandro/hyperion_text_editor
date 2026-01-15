@@ -5,6 +5,8 @@
 
 use std::io::Write;
 
+use termion::{clear, cursor};
+
 use crate::{buffer::TextBuffer, search::SearchState, terminal::messages, ui};
 
 pub struct Editor {
@@ -254,7 +256,14 @@ impl Editor {
     }
 
     pub fn write<W: Write>(&self, stdout: &mut W) {
-        ui::clear_screen(stdout);
+        // Usamos un buffer local para construir TODO el frame y hacer un solo write()
+        let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
+
+        // Ocultamos el cursor mientras renderizamos, movemos al tope y limpiamos lo que haga falta
+        write!(out, "{}", cursor::Hide).unwrap();
+        write!(out, "{}", cursor::Goto(1, 1)).unwrap();
+        // Limpiamos desde aquí hacia abajo (más económico que clear::All)
+        write!(out, "{}", clear::AfterCursor).unwrap();
 
         // Calcular cuantas lineas se pueden mostrar (dejar 2 para barra de estado)
         let visible_lines = (self.window_sizes.1 - 2) as usize;
@@ -263,24 +272,22 @@ impl Editor {
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
-        // Renderizar cada linea visible
+        // Renderizar cada linea visible en el buffer 'out'
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row + 1) as u16;
             let line_num_digits = self.buffer.line_count().to_string().len();
 
-            // Dibujar numero de linea
-            ui::render_line_number(stdout, line_num, window_row, line_num_digits);
-
-            // Dibujar contenido de la línea con resaltado de búsqueda si aplica
+            // ui::render_* acepta un Write, así que le pasamos &mut out
+            ui::render_line_number(&mut out, line_num, window_row, line_num_digits);
             let line = self.buffer.line(i);
-            ui::render_line_content(stdout, &line, i, self.offset_col, &self.search);
+            ui::render_line_content(&mut out, &line, i, self.offset_col, &self.search);
         }
 
-        // Dibujar barra de estado
+        // Barra de estado
         let state_row = self.window_sizes.1 - 1;
         ui::render_status_bar(
-            stdout,
+            &mut out,
             state_row,
             self.filename.as_deref(),
             self.cursor_y + 1,
@@ -288,10 +295,10 @@ impl Editor {
             self.cursor_x + 1,
         );
 
-        // Renderizar mensaje de estado
-        ui::render_message(stdout, state_row + 1, &self.state_msg);
+        // Mensaje de estado (debajo de la barra)
+        ui::render_message(&mut out, state_row + 1, &self.state_msg);
 
-        // Posicionar el cursor
+        // Colocar cursor en su posición visual (también se escribe en 'out')
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
             self.cursor_y,
@@ -299,8 +306,13 @@ impl Editor {
             self.offset_row,
             line_num_width,
         );
-        ui::position_cursor(stdout, visual_x, visual_y);
+        ui::position_cursor(&mut out, visual_x, visual_y);
 
+        // Mostrar el cursor otra vez y volcar todo al stdout en una sola operación
+        write!(out, "{}", cursor::Show).unwrap();
+
+        // Escribir todo de una vez en el stdout proporcionado por el caller
+        stdout.write_all(&out).unwrap();
         stdout.flush().unwrap();
     }
 }
