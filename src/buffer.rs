@@ -100,6 +100,21 @@ impl TextBuffer {
         // Insertar el carácter
         self.rope.insert_char(char_idx, ch);
     }
+
+    /// Inserta una cadena en una posición específica
+    ///
+    /// # Argumentos
+    /// * `line_idx` - Índice de la línea donde insertar
+    /// * `col` - Columna donde insertar la cadena
+    /// * `text` - Texto a insertar
+    pub fn insert_str(&mut self, line_idx: usize, col: usize, text: &str) {
+        let line_start = self.rope.line_to_char(line_idx);
+        let line_len = self.line_length(line_idx);
+        let safe_col = col.min(line_len);
+        let char_idx = line_start + safe_col;
+
+        self.rope.insert(char_idx, text);
+    }
     /// Elimina el carácter antes de la posición especificada
     ///
     /// # Argumentos

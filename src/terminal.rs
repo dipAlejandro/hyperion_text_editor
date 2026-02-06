@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crossterm::{
     ExecutableCommand, QueueableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     terminal::{self, ClearType},
 };
 
@@ -38,11 +38,20 @@ pub mod keys {
     pub fn is_goto_line(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('g')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
+
+    pub fn is_copy(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_paste(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
 }
 
 // Constantes para manejar el estado por defecto
 pub mod messages {
-    pub const DEFAULT_STATUS: &str = "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir";
+    pub const DEFAULT_STATUS: &str =
+        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+C: Copiar | Ctrl+V: Pegar";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
     pub const OPEN_CANCELLED: &str = "Apertura cancelada";
     pub const SEARCH_CANCELLED: &str = "Búsqueda cancelada";
@@ -67,7 +76,9 @@ pub fn cleanup() -> io::Result<()> {
 pub fn read_key() -> io::Result<KeyEvent> {
     loop {
         if let Event::Key(key) = event::read()? {
-            return Ok(key);
+            if key.kind == KeyEventKind::Press {
+                return Ok(key);
+            }
         }
     }
 }

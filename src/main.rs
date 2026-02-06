@@ -106,6 +106,10 @@ fn main() {
                     editor.state_msg = messages::INVALID_NUMBERS.to_string();
                 }
             }
+        } else if keys::is_copy(&key) {
+            editor.copy_line();
+        } else if keys::is_paste(&key) {
+            editor.paste_clipboard();
         } else {
             match key.code {
                 KeyCode::Up => editor.move_up(),
