@@ -44,11 +44,7 @@ hyperion --help
 ------------------------------------------------------------------------
 
 #### Instalación (Windows)
-
-1.  Descargá el archivo:
-
-2.  Extraé el archivo `.zip`.\
-    Obtendrás `hyperion.exe`.
+Extraé el archivo `.zip`. Obtendrás `hyperion.exe`.
 
 ##### Opción A (rápida)
 
