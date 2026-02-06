@@ -19,6 +19,7 @@ pub struct Editor {
     offset_row: usize,
     offset_col: usize,
     search: SearchState,
+    clipboard: String,
 }
 
 impl Editor {
@@ -35,6 +36,7 @@ impl Editor {
             offset_row: 0,
             offset_col: 0,
             search: SearchState::new(),
+            clipboard: String::new(),
         }
     }
 
@@ -220,6 +222,33 @@ impl Editor {
                 self.cursor_y + 1,
                 self.cursor_x + 1
             );
+        }
+    }
+
+    pub fn copy_line(&mut self) {
+        self.clipboard = self.buffer.line(self.cursor_y);
+        if self.clipboard.is_empty() {
+            self.state_msg = "Línea vacía copiada".to_string();
+        } else {
+            self.state_msg = "Línea copiada".to_string();
+        }
+    }
+
+    pub fn paste_clipboard(&mut self) {
+        if self.clipboard.is_empty() {
+            self.state_msg = "Portapapeles vacío".to_string();
+            return;
+        }
+
+        let lines: Vec<&str> = self.clipboard.split('\n').collect();
+        self.buffer
+            .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
+
+        if lines.len() == 1 {
+            self.cursor_x += lines[0].chars().count();
+        } else {
+            self.cursor_y += lines.len() - 1;
+            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
         }
     }
 
