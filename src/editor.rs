@@ -19,6 +19,7 @@ pub struct Editor {
     offset_row: usize,
     offset_col: usize,
     search: SearchState,
+    clipboard: String,
 }
 
 impl Editor {
@@ -35,6 +36,7 @@ impl Editor {
             offset_row: 0,
             offset_col: 0,
             search: SearchState::new(),
+            clipboard: String::new(),
         }
     }
 
@@ -122,7 +124,7 @@ impl Editor {
     }
 
     pub fn adjust_scroll(&mut self) {
-        let visible_lines = (self.window_sizes.1 - 2) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
 
         if self.cursor_y < self.offset_row {
             self.offset_row = self.cursor_y;
@@ -140,8 +142,43 @@ impl Editor {
             self.offset_col = self.cursor_x;
         }
 
+        if visible_cols == 0 {
+            self.offset_col = 0;
+            return;
+        }
+
         if self.cursor_x >= self.offset_col + visible_cols {
             self.offset_col = self.cursor_x - visible_cols + 1;
+        }
+    }
+
+    pub fn update_window_size(&mut self, width: u16, height: u16) {
+        self.window_sizes = (width, height);
+
+        let visible_lines = height.saturating_sub(3) as usize;
+        let line_count = self.buffer.line_count();
+        let max_visible_lines = visible_lines.max(1);
+        let max_offset_row = line_count.saturating_sub(max_visible_lines);
+
+        if self.offset_row > self.cursor_y {
+            self.offset_row = self.cursor_y;
+        }
+        if self.offset_row > max_offset_row {
+            self.offset_row = max_offset_row;
+        }
+
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let visible_cols = width
+            .saturating_sub(line_num_width as u16)
+            .max(1) as usize;
+        let line_length = self.buffer.line_length(self.cursor_y);
+        let max_offset_col = line_length.saturating_sub(visible_cols);
+
+        if self.offset_col > self.cursor_x {
+            self.offset_col = self.cursor_x;
+        }
+        if self.offset_col > max_offset_col {
+            self.offset_col = max_offset_col;
         }
     }
 
@@ -223,6 +260,33 @@ impl Editor {
         }
     }
 
+    pub fn copy_line(&mut self) {
+        self.clipboard = self.buffer.line(self.cursor_y);
+        if self.clipboard.is_empty() {
+            self.state_msg = "Línea vacía copiada".to_string();
+        } else {
+            self.state_msg = "Línea copiada".to_string();
+        }
+    }
+
+    pub fn paste_clipboard(&mut self) {
+        if self.clipboard.is_empty() {
+            self.state_msg = "Portapapeles vacío".to_string();
+            return;
+        }
+
+        let lines: Vec<&str> = self.clipboard.split('\n').collect();
+        self.buffer
+            .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
+
+        if lines.len() == 1 {
+            self.cursor_x += lines[0].chars().count();
+        } else {
+            self.cursor_y += lines.len() - 1;
+            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
+        }
+    }
+
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
@@ -235,7 +299,15 @@ impl Editor {
         )
         .unwrap();
 
-        let visible_lines = (self.window_sizes.1 - 2) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+
+        if visible_lines == 0 || self.window_sizes.0 == 0 {
+            ui::render_message(&mut out, 0, "Ventana demasiado pequeña");
+            write!(out, "{}", cursor::Show).unwrap();
+            stdout.write_all(&out).unwrap();
+            stdout.flush().unwrap();
+            return;
+        }
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
 
         let start = self.offset_row;
@@ -244,26 +316,40 @@ impl Editor {
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row) as u16;
-            let line_num_digits = self.buffer.line_count().to_string().len();
+            let _line_num_digits = self.buffer.line_count().to_string().len();
 
             ui::render_line_number(&mut out, line_num, window_row, line_num_width); // valor
             // anterior:
             // line_num_digits
             let line = self.buffer.line(i);
-            ui::render_line_content(&mut out, &line, i, self.offset_col, &self.search);
+            ui::render_line_content(
+                &mut out,
+                &line,
+                i,
+                self.offset_col,
+                &self.search,
+                i == self.cursor_y,
+            );
         }
 
-        let state_row = self.window_sizes.1 - 2;
+        let status_row = self.window_sizes.1.saturating_sub(3);
+        let message_row = self.window_sizes.1.saturating_sub(2);
+        let default_row = self.window_sizes.1.saturating_sub(1);
         ui::render_status_bar(
             &mut out,
-            state_row,
+            status_row,
             self.filename.as_deref(),
             self.cursor_y + 1,
             self.buffer.line_count(),
             self.cursor_x + 1,
         );
 
-        ui::render_message(&mut out, state_row + 1, &self.state_msg);
+        if self.state_msg != messages::DEFAULT_STATUS {
+            ui::render_message(&mut out, message_row, &self.state_msg);
+        } else {
+            ui::render_message(&mut out, message_row, "");
+        }
+        ui::render_message(&mut out, default_row, messages::DEFAULT_STATUS);
 
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,

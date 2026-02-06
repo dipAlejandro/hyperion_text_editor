@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crossterm::{
     ExecutableCommand, QueueableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     terminal::{self, ClearType},
 };
 
@@ -38,11 +38,20 @@ pub mod keys {
     pub fn is_goto_line(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('g')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
+
+    pub fn is_copy(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_paste(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
 }
 
 // Constantes para manejar el estado por defecto
 pub mod messages {
-    pub const DEFAULT_STATUS: &str = "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir";
+    pub const DEFAULT_STATUS: &str =
+        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+C: Copiar | Ctrl+V: Pegar";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
     pub const OPEN_CANCELLED: &str = "Apertura cancelada";
     pub const SEARCH_CANCELLED: &str = "Búsqueda cancelada";
@@ -63,11 +72,18 @@ pub fn cleanup() -> io::Result<()> {
     Ok(())
 }
 
-/// Lee el siguiente evento de teclado
-pub fn read_key() -> io::Result<KeyEvent> {
+/// Lee el siguiente evento del terminal
+pub fn read_event() -> io::Result<Event> {
     loop {
-        if let Event::Key(key) = event::read()? {
-            return Ok(key);
+        let event = event::read()?;
+        match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => return Ok(Event::Key(key)),
+            Event::Resize(_, _) => return Ok(event),
+            Event::Mouse(_)
+            | Event::FocusGained
+            | Event::FocusLost
+            | Event::Paste(_) => return Ok(event),
+            _ => {}
         }
     }
 }
@@ -94,25 +110,27 @@ pub fn request_input<W: Write>(stdout: &mut W, prompt: &str) -> String {
     write!(stdout, "{}", prompt).unwrap();
     stdout.flush().unwrap();
 
-    while let Ok(key) = read_key() {
-        match key.code {
-            KeyCode::Enter => break,
-            KeyCode::Char(c) => {
-                user_input.push(c);
-                write!(stdout, "{}", c).unwrap();
-                stdout.flush().unwrap();
-            }
-
-            KeyCode::Backspace => {
-                if !user_input.is_empty() {
-                    user_input.pop();
-                    stdout.queue(cursor::MoveLeft(1)).unwrap();
-                    write!(stdout, " ").unwrap();
-                    stdout.queue(cursor::MoveLeft(1)).unwrap();
+    while let Ok(event) = read_event() {
+        if let Event::Key(key) = event {
+            match key.code {
+                KeyCode::Enter => break,
+                KeyCode::Char(c) => {
+                    user_input.push(c);
+                    write!(stdout, "{}", c).unwrap();
                     stdout.flush().unwrap();
                 }
+
+                KeyCode::Backspace => {
+                    if !user_input.is_empty() {
+                        user_input.pop();
+                        stdout.queue(cursor::MoveLeft(1)).unwrap();
+                        write!(stdout, " ").unwrap();
+                        stdout.queue(cursor::MoveLeft(1)).unwrap();
+                        stdout.flush().unwrap();
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
