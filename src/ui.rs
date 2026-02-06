@@ -137,9 +137,9 @@ pub fn position_cursor<W: Write>(stdout: &mut W, x: u16, y: u16) {
     write!(stdout, "{}", cursor::MoveTo(x, y)).unwrap();
 }
 
-pub fn clear_screen<W: Write>(stdout: &mut W) {
+/**pub fn clear_screen<W: Write>(stdout: &mut W) {
     write!(stdout, "{}", terminal::Clear(terminal::ClearType::All)).unwrap();
-}
+}**/
 
 #[cfg(test)]
 mod tests {
