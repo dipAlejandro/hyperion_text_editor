@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crossterm::{
     ExecutableCommand, QueueableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     terminal::{self, ClearType},
 };
 
@@ -67,7 +67,9 @@ pub fn cleanup() -> io::Result<()> {
 pub fn read_key() -> io::Result<KeyEvent> {
     loop {
         if let Event::Key(key) = event::read()? {
-            return Ok(key);
+            if key.kind == KeyEventKind::Press {
+                return Ok(key);
+            }
         }
     }
 }
