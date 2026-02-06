@@ -82,14 +82,16 @@ fn highlight_matches(
         if match_start < visible_line.len() && match_end > match_start {
             write!(
                 highlighted_line,
-                "{}{}{}",
+                "{}{}",
                 SetBackgroundColor(Color::Yellow),
                 &visible_line[match_start..match_end],
-                line_bg
-                    .map(SetBackgroundColor)
-                    .unwrap_or(ResetColor)
             )
             .unwrap();
+            if let Some(color) = line_bg {
+                write!(highlighted_line, "{}", SetBackgroundColor(color)).unwrap();
+            } else {
+                write!(highlighted_line, "{}", ResetColor).unwrap();
+            }
             current_pos = match_end;
         }
     }
