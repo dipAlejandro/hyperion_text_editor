@@ -124,7 +124,7 @@ impl Editor {
     }
 
     pub fn adjust_scroll(&mut self) {
-        let visible_lines = (self.window_sizes.1 - 2) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
 
         if self.cursor_y < self.offset_row {
             self.offset_row = self.cursor_y;
@@ -155,7 +155,7 @@ impl Editor {
     pub fn update_window_size(&mut self, width: u16, height: u16) {
         self.window_sizes = (width, height);
 
-        let visible_lines = height.saturating_sub(2) as usize;
+        let visible_lines = height.saturating_sub(3) as usize;
         let line_count = self.buffer.line_count();
         let max_visible_lines = visible_lines.max(1);
         let max_offset_row = line_count.saturating_sub(max_visible_lines);
@@ -299,7 +299,7 @@ impl Editor {
         )
         .unwrap();
 
-        let visible_lines = self.window_sizes.1.saturating_sub(2) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
 
         if visible_lines == 0 || self.window_sizes.0 == 0 {
             ui::render_message(&mut out, 0, "Ventana demasiado pequeña");
@@ -322,20 +322,34 @@ impl Editor {
             // anterior:
             // line_num_digits
             let line = self.buffer.line(i);
-            ui::render_line_content(&mut out, &line, i, self.offset_col, &self.search);
+            ui::render_line_content(
+                &mut out,
+                &line,
+                i,
+                self.offset_col,
+                &self.search,
+                i == self.cursor_y,
+            );
         }
 
-        let state_row = self.window_sizes.1 - 2;
+        let status_row = self.window_sizes.1.saturating_sub(3);
+        let message_row = self.window_sizes.1.saturating_sub(2);
+        let default_row = self.window_sizes.1.saturating_sub(1);
         ui::render_status_bar(
             &mut out,
-            state_row,
+            status_row,
             self.filename.as_deref(),
             self.cursor_y + 1,
             self.buffer.line_count(),
             self.cursor_x + 1,
         );
 
-        ui::render_message(&mut out, state_row + 1, &self.state_msg);
+        if self.state_msg != messages::DEFAULT_STATUS {
+            ui::render_message(&mut out, message_row, &self.state_msg);
+        } else {
+            ui::render_message(&mut out, message_row, "");
+        }
+        ui::render_message(&mut out, default_row, messages::DEFAULT_STATUS);
 
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
