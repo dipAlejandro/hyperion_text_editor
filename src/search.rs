@@ -88,19 +88,22 @@ impl SearchState {
 
         // Guardar la consulta
         self.query = Some(query.to_string());
+        let query_len = query.chars().count();
 
         // Buscar en todas las líneas
         for (line_idx, line) in lines.iter().enumerate() {
-            let mut start_pos = 0;
+            let mut char_col = 0;
 
-            // Buscar todas las ocurrencias en esta línea
-            while let Some(found_pos) = line[start_pos..].find(query) {
-                let actual_pos = start_pos + found_pos;
-
-                self.matches
-                    .push(Match::new(line_idx, actual_pos, actual_pos + query.len()));
-
-                start_pos = actual_pos + 1;
+            // Buscar todas las ocurrencias en esta línea usando índices por carácter
+            for (byte_idx, _) in line.char_indices() {
+                if line[byte_idx..].starts_with(query) {
+                    self.matches.push(Match::new(
+                        line_idx,
+                        char_col,
+                        char_col + query_len,
+                    ));
+                }
+                char_col += 1;
             }
         }
 
@@ -187,5 +190,19 @@ mod tests {
 
         state.previous_match();
         assert_eq!(state.current_index, Some(0));
+    }
+
+    #[test]
+    fn test_search_utf8_overlapping() {
+        let lines = vec!["ááá".to_string()];
+        let mut state = SearchState::new();
+
+        let count = state.search("áá", &lines);
+
+        assert_eq!(count, 2);
+        assert_eq!(state.matches[0].start_col, 0);
+        assert_eq!(state.matches[0].end_col, 2);
+        assert_eq!(state.matches[1].start_col, 1);
+        assert_eq!(state.matches[1].end_col, 3);
     }
 }
