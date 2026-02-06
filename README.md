@@ -7,7 +7,7 @@ en **Rust**, enfocado en simplicidad de uso, similar a nano.
 
 ## 📦 Instalación
 
-> ⚠️ Actualmente soporta **Linux, macOS y Windows (x86_64)**.
+> Actualmente soporta **Linux, macOS y Windows (x86_64)**.
 
 ### Opción 1: Descargar binarios (recomendado)
 
@@ -46,11 +46,6 @@ hyperion --help
 #### Instalación (Windows)
 
 1.  Descargá el archivo:
-
-```{=html}
-<!-- -->
-```
-    hyperion-x86_64-pc-windows-msvc.zip
 
 2.  Extraé el archivo `.zip`.\
     Obtendrás `hyperion.exe`.
