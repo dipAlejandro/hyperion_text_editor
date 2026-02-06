@@ -147,6 +147,36 @@ impl Editor {
         }
     }
 
+    pub fn update_window_size(&mut self, width: u16, height: u16) {
+        self.window_sizes = (width, height);
+
+        let visible_lines = height.saturating_sub(2) as usize;
+        let line_count = self.buffer.line_count();
+        let max_visible_lines = visible_lines.max(1);
+        let max_offset_row = line_count.saturating_sub(max_visible_lines);
+
+        if self.offset_row > self.cursor_y {
+            self.offset_row = self.cursor_y;
+        }
+        if self.offset_row > max_offset_row {
+            self.offset_row = max_offset_row;
+        }
+
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let visible_cols = width
+            .saturating_sub(line_num_width as u16)
+            .max(1) as usize;
+        let line_length = self.buffer.line_length(self.cursor_y);
+        let max_offset_col = line_length.saturating_sub(visible_cols);
+
+        if self.offset_col > self.cursor_x {
+            self.offset_col = self.cursor_x;
+        }
+        if self.offset_col > max_offset_col {
+            self.offset_col = max_offset_col;
+        }
+    }
+
     pub fn search(&mut self, query: &str) {
         let lines: Vec<String> = self.buffer.iter_lines().collect();
         let count = self.search.search(query, &lines);
