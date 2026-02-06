@@ -101,6 +101,13 @@ pub fn render_status_bar<W: Write>(
     cursor_col: usize,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
+    let width = terminal::size().map(|(width, _)| width as usize).unwrap_or(0);
+    let status_text = format!(
+        "{} | Linea {}/{}, Col {}",
+        file_info, cursor_line, total_lines, cursor_col
+    );
+    let visible_text = truncate_with_ellipsis(&status_text, width);
+    let padded_text = pad_to_width(&visible_text, width);
     write!(
         stdout,
         "{}{}",
@@ -109,12 +116,7 @@ pub fn render_status_bar<W: Write>(
     )
     .unwrap();
     write!(stdout, "{}", SetForegroundColor(Color::Black)).unwrap();
-    write!(
-        stdout,
-        "{} | Linea {}/{}, Col {}",
-        file_info, cursor_line, total_lines, cursor_col
-    )
-    .unwrap();
+    write!(stdout, "{}", padded_text).unwrap();
     write!(stdout, "{}", ResetColor).unwrap();
     write!(
         stdout,
@@ -125,7 +127,17 @@ pub fn render_status_bar<W: Write>(
 }
 
 pub fn render_message<W: Write>(stdout: &mut W, row: u16, message: &str) {
-    write!(stdout, "{}{}", cursor::MoveTo(0, row), message).unwrap();
+    let width = terminal::size().map(|(width, _)| width as usize).unwrap_or(0);
+    let visible_message = truncate_with_ellipsis(message, width);
+    let padded_message = pad_to_width(&visible_message, width);
+    write!(
+        stdout,
+        "{}{}{}",
+        cursor::MoveTo(0, row),
+        padded_message,
+        terminal::Clear(terminal::ClearType::UntilNewLine)
+    )
+    .unwrap();
 }
 
 pub fn calculate_line_number_width(total_lines: usize) -> usize {
@@ -148,6 +160,32 @@ pub fn calculate_visual_cursor_position(
 
 pub fn position_cursor<W: Write>(stdout: &mut W, x: u16, y: u16) {
     write!(stdout, "{}", cursor::MoveTo(x, y)).unwrap();
+}
+
+fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
+    let text_width = text.chars().count();
+    if max_width == 0 {
+        return String::new();
+    }
+    if text_width <= max_width {
+        return text.to_string();
+    }
+    if max_width == 1 {
+        return "…".to_string();
+    }
+    let truncated: String = text.chars().take(max_width - 1).collect();
+    format!("{}…", truncated)
+}
+
+fn pad_to_width(text: &str, width: usize) -> String {
+    let text_width = text.chars().count();
+    if text_width >= width {
+        return text.to_string();
+    }
+    let mut padded = String::with_capacity(width);
+    padded.push_str(text);
+    padded.extend(std::iter::repeat(' ').take(width - text_width));
+    padded
 }
 
 /**pub fn clear_screen<W: Write>(stdout: &mut W) {
