@@ -322,7 +322,14 @@ impl Editor {
             // anterior:
             // line_num_digits
             let line = self.buffer.line(i);
-            ui::render_line_content(&mut out, &line, i, self.offset_col, &self.search);
+            ui::render_line_content(
+                &mut out,
+                &line,
+                i,
+                self.offset_col,
+                &self.search,
+                i == self.cursor_y,
+            );
         }
 
         let state_row = self.window_sizes.1 - 2;

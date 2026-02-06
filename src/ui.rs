@@ -20,15 +20,28 @@ pub fn render_line_content<W: Write>(
     line_idx: usize,
     start_col: usize,
     search: &SearchState,
+    is_current_line: bool,
 ) {
     let start_byte = char_to_byte_idx(line, start_col);
     let visible_line = &line[start_byte..];
+    let line_bg = is_current_line.then_some(Color::DarkGrey);
 
     if search.is_active() {
-        let highlighted = highlight_matches(line, line_idx, start_col, search);
+        let highlighted = highlight_matches(line, line_idx, start_col, search, line_bg);
         write!(stdout, "{}", highlighted).unwrap();
     } else {
-        write!(stdout, "{}", visible_line).unwrap();
+        if let Some(color) = line_bg {
+            write!(
+                stdout,
+                "{}{}{}",
+                SetBackgroundColor(color),
+                visible_line,
+                ResetColor
+            )
+            .unwrap();
+        } else {
+            write!(stdout, "{}", visible_line).unwrap();
+        }
     }
 }
 
@@ -37,11 +50,16 @@ fn highlight_matches(
     line_idx: usize,
     start_col: usize,
     search: &SearchState,
+    line_bg: Option<Color>,
 ) -> String {
     let start_byte = char_to_byte_idx(line, start_col);
     let visible_line = &line[start_byte..];
     let mut highlighted_line = String::new();
     let mut current_pos = 0;
+
+    if let Some(color) = line_bg {
+        write!(highlighted_line, "{}", SetBackgroundColor(color)).unwrap();
+    }
 
     for m in search.matches() {
         if m.line != line_idx || m.end_col <= start_col {
@@ -67,7 +85,9 @@ fn highlight_matches(
                 "{}{}{}",
                 SetBackgroundColor(Color::Yellow),
                 &visible_line[match_start..match_end],
-                ResetColor
+                line_bg
+                    .map(SetBackgroundColor)
+                    .unwrap_or(ResetColor)
             )
             .unwrap();
             current_pos = match_end;
@@ -76,6 +96,10 @@ fn highlight_matches(
 
     if current_pos < visible_line.len() {
         highlighted_line.push_str(&visible_line[current_pos..]);
+    }
+
+    if line_bg.is_some() {
+        write!(highlighted_line, "{}", ResetColor).unwrap();
     }
 
     highlighted_line
