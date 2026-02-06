@@ -75,11 +75,10 @@ pub fn cleanup() -> io::Result<()> {
 /// Lee el siguiente evento de teclado
 pub fn read_key() -> io::Result<KeyEvent> {
     loop {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
+        if let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press {
                 return Ok(key);
             }
-        }
     }
 }
 

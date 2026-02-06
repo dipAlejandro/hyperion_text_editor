@@ -273,7 +273,7 @@ impl Editor {
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row) as u16;
-            let line_num_digits = self.buffer.line_count().to_string().len();
+            let _line_num_digits = self.buffer.line_count().to_string().len();
 
             ui::render_line_number(&mut out, line_num, window_row, line_num_width); // valor
             // anterior:
