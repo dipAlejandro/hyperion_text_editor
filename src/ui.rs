@@ -21,10 +21,11 @@ pub fn render_line_content<W: Write>(
     start_col: usize,
     search: &SearchState,
 ) {
-    let visible_line = &line[start_col.min(line.len())..];
+    let start_byte = char_to_byte_idx(line, start_col);
+    let visible_line = &line[start_byte..];
 
     if search.is_active() {
-        let highlighted = highlight_matches(visible_line, line_idx, start_col, search);
+        let highlighted = highlight_matches(line, line_idx, start_col, search);
         write!(stdout, "{}", highlighted).unwrap();
     } else {
         write!(stdout, "{}", visible_line).unwrap();
@@ -32,23 +33,24 @@ pub fn render_line_content<W: Write>(
 }
 
 fn highlight_matches(
-    visible_line: &str,
+    line: &str,
     line_idx: usize,
     start_col: usize,
     search: &SearchState,
 ) -> String {
+    let start_byte = char_to_byte_idx(line, start_col);
+    let visible_line = &line[start_byte..];
     let mut highlighted_line = String::new();
     let mut current_pos = 0;
 
     for m in search.matches() {
-        if m.line != line_idx || m.start_col < start_col {
+        if m.line != line_idx || m.end_col <= start_col {
             continue;
         }
 
-        let text_before_len = m
-            .start_col
-            .saturating_sub(start_col)
-            .saturating_sub(current_pos);
+        let match_start = char_to_byte_idx(line, m.start_col).saturating_sub(start_byte);
+        let match_end = char_to_byte_idx(line, m.end_col).saturating_sub(start_byte);
+        let text_before_len = match_start.saturating_sub(current_pos);
 
         if text_before_len > 0 && current_pos < visible_line.len() {
             let end_idx = (current_pos + text_before_len).min(visible_line.len());
@@ -56,8 +58,8 @@ fn highlight_matches(
             current_pos = end_idx;
         }
 
-        let match_start = m.start_col.saturating_sub(start_col);
-        let match_end = m.end_col.saturating_sub(start_col).min(visible_line.len());
+        let match_start = match_start.min(visible_line.len());
+        let match_end = match_end.min(visible_line.len());
 
         if match_start < visible_line.len() && match_end > match_start {
             write!(
@@ -77,6 +79,17 @@ fn highlight_matches(
     }
 
     highlighted_line
+}
+
+fn char_to_byte_idx(text: &str, char_idx: usize) -> usize {
+    if char_idx == 0 {
+        return 0;
+    }
+
+    text.char_indices()
+        .nth(char_idx)
+        .map(|(idx, _)| idx)
+        .unwrap_or_else(|| text.len())
 }
 
 pub fn render_status_bar<W: Write>(
