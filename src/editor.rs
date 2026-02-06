@@ -142,6 +142,11 @@ impl Editor {
             self.offset_col = self.cursor_x;
         }
 
+        if visible_cols == 0 {
+            self.offset_col = 0;
+            return;
+        }
+
         if self.cursor_x >= self.offset_col + visible_cols {
             self.offset_col = self.cursor_x - visible_cols + 1;
         }
@@ -294,7 +299,15 @@ impl Editor {
         )
         .unwrap();
 
-        let visible_lines = (self.window_sizes.1 - 2) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(2) as usize;
+
+        if visible_lines == 0 || self.window_sizes.0 == 0 {
+            ui::render_message(&mut out, 0, "Ventana demasiado pequeña");
+            write!(out, "{}", cursor::Show).unwrap();
+            stdout.write_all(&out).unwrap();
+            stdout.flush().unwrap();
+            return;
+        }
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
 
         let start = self.offset_row;
