@@ -1,4 +1,5 @@
 use crate::search::SearchState;
+use crate::syntax::{SyntaxLanguage, detect_language, tokenize_line};
 use crossterm::{
     cursor,
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
@@ -21,101 +22,57 @@ pub fn render_line_content<W: Write>(
     start_col: usize,
     search: &SearchState,
     is_current_line: bool,
+    language: SyntaxLanguage,
 ) {
-    let start_byte = char_to_byte_idx(line, start_col);
-    let visible_line = &line[start_byte..];
     let line_bg = is_current_line.then_some(Color::DarkGrey);
+    let chars: Vec<char> = line.chars().collect();
+    let tokens = tokenize_line(line, language);
+    let mut styled = String::new();
+    let mut prev_style: Option<(Option<Color>, Option<Color>)> = None;
 
-    if search.is_active() {
-        let highlighted = highlight_matches(line, line_idx, start_col, search, line_bg);
-        write!(stdout, "{}", highlighted).unwrap();
-    } else {
-        if let Some(color) = line_bg {
-            write!(
-                stdout,
-                "{}{}{}",
-                SetBackgroundColor(color),
-                visible_line,
-                ResetColor
-            )
-            .unwrap();
+    for (col, ch) in chars.iter().enumerate().skip(start_col) {
+        let fg = tokens.get(col).and_then(|token| token.map(|t| t.color()));
+        let bg = if is_match_col(line_idx, search, col) {
+            Some(Color::Yellow)
         } else {
-            write!(stdout, "{}", visible_line).unwrap();
-        }
-    }
-}
+            line_bg
+        };
+        let style = Some((fg, bg));
 
-fn highlight_matches(
-    line: &str,
-    line_idx: usize,
-    start_col: usize,
-    search: &SearchState,
-    line_bg: Option<Color>,
-) -> String {
-    let start_byte = char_to_byte_idx(line, start_col);
-    let visible_line = &line[start_byte..];
-    let mut highlighted_line = String::new();
-    let mut current_pos = 0;
-
-    if let Some(color) = line_bg {
-        write!(highlighted_line, "{}", SetBackgroundColor(color)).unwrap();
-    }
-
-    for m in search.matches() {
-        if m.line != line_idx || m.end_col <= start_col {
-            continue;
-        }
-
-        let match_start = char_to_byte_idx(line, m.start_col).saturating_sub(start_byte);
-        let match_end = char_to_byte_idx(line, m.end_col).saturating_sub(start_byte);
-        let text_before_len = match_start.saturating_sub(current_pos);
-
-        if text_before_len > 0 && current_pos < visible_line.len() {
-            let end_idx = (current_pos + text_before_len).min(visible_line.len());
-            highlighted_line.push_str(&visible_line[current_pos..end_idx]);
-            current_pos = end_idx;
-        }
-
-        let match_start = match_start.min(visible_line.len());
-        let match_end = match_end.min(visible_line.len());
-
-        if match_start < visible_line.len() && match_end > match_start {
-            write!(
-                highlighted_line,
-                "{}{}",
-                SetBackgroundColor(Color::Yellow),
-                &visible_line[match_start..match_end],
-            )
-            .unwrap();
-            if let Some(color) = line_bg {
-                write!(highlighted_line, "{}", SetBackgroundColor(color)).unwrap();
-            } else {
-                write!(highlighted_line, "{}", ResetColor).unwrap();
+        if prev_style != style {
+            write!(styled, "{}", ResetColor).unwrap();
+            if let Some(bg) = bg {
+                write!(styled, "{}", SetBackgroundColor(bg)).unwrap();
             }
-            current_pos = match_end;
+            if let Some(fg) = fg {
+                write!(styled, "{}", SetForegroundColor(fg)).unwrap();
+            }
+            prev_style = style;
         }
+
+        styled.push(*ch);
     }
 
-    if current_pos < visible_line.len() {
-        highlighted_line.push_str(&visible_line[current_pos..]);
+    if !chars.is_empty() && prev_style.is_some() {
+        write!(styled, "{}", ResetColor).unwrap();
     }
 
-    if line_bg.is_some() {
-        write!(highlighted_line, "{}", ResetColor).unwrap();
-    }
-
-    highlighted_line
+    write!(stdout, "{}", styled).unwrap();
 }
 
-fn char_to_byte_idx(text: &str, char_idx: usize) -> usize {
-    if char_idx == 0 {
-        return 0;
+fn is_match_col(line_idx: usize, search: &SearchState, col: usize) -> bool {
+    if !search.is_active() {
+        return false;
     }
 
-    text.char_indices()
-        .nth(char_idx)
-        .map(|(idx, _)| idx)
-        .unwrap_or_else(|| text.len())
+    search
+        .matches()
+        .iter()
+        .any(|m| m.line == line_idx && col >= m.start_col && col < m.end_col)
+}
+
+pub fn language_from_filename(filename: Option<&str>) -> SyntaxLanguage {
+    detect_language(filename)
 }
 
 pub fn render_status_bar<W: Write>(
@@ -127,7 +84,9 @@ pub fn render_status_bar<W: Write>(
     cursor_col: usize,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
-    let width = terminal::size().map(|(width, _)| width as usize).unwrap_or(0);
+    let width = terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(0);
     let status_text = format!(
         "{} | Linea {}/{}, Col {}",
         file_info, cursor_line, total_lines, cursor_col
@@ -153,7 +112,9 @@ pub fn render_status_bar<W: Write>(
 }
 
 pub fn render_message<W: Write>(stdout: &mut W, row: u16, message: &str) {
-    let width = terminal::size().map(|(width, _)| width as usize).unwrap_or(0);
+    let width = terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(0);
     let visible_message = truncate_with_ellipsis(message, width);
     let padded_message = pad_to_width(&visible_message, width);
     write!(
@@ -210,13 +171,9 @@ fn pad_to_width(text: &str, width: usize) -> String {
     }
     let mut padded = String::with_capacity(width);
     padded.push_str(text);
-    padded.extend(std::iter::repeat(' ').take(width - text_width));
+    padded.extend(std::iter::repeat_n(' ', width - text_width));
     padded
 }
-
-/**pub fn clear_screen<W: Write>(stdout: &mut W) {
-    write!(stdout, "{}", terminal::Clear(terminal::ClearType::All)).unwrap();
-}**/
 
 #[cfg(test)]
 mod tests {

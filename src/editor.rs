@@ -168,9 +168,7 @@ impl Editor {
         }
 
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
-        let visible_cols = width
-            .saturating_sub(line_num_width as u16)
-            .max(1) as usize;
+        let visible_cols = width.saturating_sub(line_num_width as u16).max(1) as usize;
         let line_length = self.buffer.line_length(self.cursor_y);
         let max_offset_col = line_length.saturating_sub(visible_cols);
 
@@ -309,6 +307,7 @@ impl Editor {
             return;
         }
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let language = ui::language_from_filename(self.filename.as_deref());
 
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
@@ -329,6 +328,7 @@ impl Editor {
                 self.offset_col,
                 &self.search,
                 i == self.cursor_y,
+                language,
             );
         }
 
