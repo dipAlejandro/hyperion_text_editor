@@ -45,8 +45,7 @@ Puedes personalizar los colores de sintaxis creando un archivo de configuración
 1. Ruta indicada por la variable de entorno `HYPERION_CONFIG`
 2. `./.hyperion.toml`
 3. `./hyperion.toml`
-4. `$XDG_CONFIG_HOME/hyperion/config.toml`
-5. `~/.config/hyperion/config.toml`
+4. `~/.config/hyperion/config.toml`
 
 Ejemplo:
 
