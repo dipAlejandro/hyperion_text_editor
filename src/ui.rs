@@ -1,3 +1,4 @@
+use crate::config::SyntaxTheme;
 use crate::search::SearchState;
 use crate::syntax::{SyntaxLanguage, detect_language, tokenize_line};
 use crossterm::{
@@ -7,6 +8,12 @@ use crossterm::{
 };
 use std::fmt::Write as _;
 use std::io::Write;
+
+#[derive(Clone, Copy)]
+pub struct SyntaxRenderConfig<'a> {
+    pub language: SyntaxLanguage,
+    pub syntax_theme: &'a SyntaxTheme,
+}
 
 pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16, width: usize) {
     write!(stdout, "{}", cursor::MoveTo(0, row)).unwrap();

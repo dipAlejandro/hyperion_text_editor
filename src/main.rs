@@ -1,5 +1,6 @@
 mod buffer;
 mod cli;
+mod config;
 mod editor;
 mod search;
 mod syntax;

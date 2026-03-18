@@ -7,7 +7,13 @@ use std::io::Write;
 
 use crossterm::{cursor, terminal};
 
-use crate::{buffer::TextBuffer, search::SearchState, terminal::messages, ui};
+use crate::{
+    buffer::TextBuffer,
+    config::{SyntaxTheme, load_syntax_theme},
+    search::SearchState,
+    terminal::messages,
+    ui,
+};
 
 pub struct Editor {
     buffer: TextBuffer,
@@ -20,6 +26,7 @@ pub struct Editor {
     offset_col: usize,
     search: SearchState,
     clipboard: String,
+    syntax_theme: SyntaxTheme,
 }
 
 impl Editor {
@@ -37,6 +44,7 @@ impl Editor {
             offset_col: 0,
             search: SearchState::new(),
             clipboard: String::new(),
+            syntax_theme: load_syntax_theme(),
         }
     }
 
