@@ -4,7 +4,7 @@ use clap::Parser;
 
 /// Editor de texto simple en terminal
 #[derive(Parser, Debug)]
-#[command(name = "hyperion")]
+#[command(name = "hy")]
 #[command(author = "Alejandro Dip")]
 #[command(version = "1.0.0")]
 #[command(about = "Editor de texto minimalista para terminal", long_about = None)]
