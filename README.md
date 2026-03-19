@@ -113,7 +113,7 @@ MIT
 
 ## Configuración de colores de sintaxis
 
-Puedes personalizar los colores de sintaxis creando un archivo de configuración en alguno de estos paths (en orden de prioridad):
+Podes personalizar los colores de sintaxis creando un archivo de configuración en alguno de estos paths (en orden de prioridad):
 
 1. Ruta indicada por la variable de entorno `HYPERION_CONFIG`
 2. `./.hyperion.toml`
