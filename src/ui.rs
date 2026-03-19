@@ -29,16 +29,18 @@ pub fn render_line_content<W: Write>(
     start_col: usize,
     search: &SearchState,
     is_current_line: bool,
-    language: SyntaxLanguage,
+    syntax: SyntaxRenderConfig<'_>,
 ) {
     let line_bg = is_current_line.then_some(Color::DarkGrey);
     let chars: Vec<char> = line.chars().collect();
-    let tokens = tokenize_line(line, language);
+    let tokens = tokenize_line(line, syntax.language);
     let mut styled = String::new();
     let mut prev_style: Option<(Option<Color>, Option<Color>)> = None;
 
     for (col, ch) in chars.iter().enumerate().skip(start_col) {
-        let fg = tokens.get(col).and_then(|token| token.map(|t| t.color()));
+        let fg = tokens
+            .get(col)
+            .and_then(|token| token.map(|t| color_for_token(t, syntax.syntax_theme)));
         let bg = if is_match_col(line_idx, search, col) {
             Some(Color::Yellow)
         } else {
@@ -65,6 +67,15 @@ pub fn render_line_content<W: Write>(
     }
 
     write!(stdout, "{}", styled).unwrap();
+}
+
+fn color_for_token(token: crate::syntax::TokenKind, theme: &SyntaxTheme) -> Color {
+    match token {
+        crate::syntax::TokenKind::Keyword => theme.keyword,
+        crate::syntax::TokenKind::String => theme.string,
+        crate::syntax::TokenKind::Number => theme.number,
+        crate::syntax::TokenKind::Comment => theme.comment,
+    }
 }
 
 fn is_match_col(line_idx: usize, search: &SearchState, col: usize) -> bool {

@@ -336,7 +336,10 @@ impl Editor {
                 self.offset_col,
                 &self.search,
                 i == self.cursor_y,
-                language,
+                ui::SyntaxRenderConfig {
+                    language,
+                    syntax_theme: &self.syntax_theme,
+                },
             );
         }
 
