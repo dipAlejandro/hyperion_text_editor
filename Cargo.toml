@@ -10,7 +10,7 @@ keywords = ["editor", "terminal", "text", "cli"]
 categories = ["command-line-utilities", "text-editors"]
 
 [[bin]]
-name = "hyperion"
+name = "hy"
 path = "src/main.rs"
 
 [dependencies]
