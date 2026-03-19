@@ -5,12 +5,15 @@ on:
     types: [published]
   push:
     tags: [v*]
+
 permissions:
   contents: write
+
 jobs:
   build:
     name: Build for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
         include:
@@ -22,40 +25,46 @@ jobs:
             target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+
       - name: Archive binary (unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           if [ -f hy ]; then
-            tar czf hyperion-${{ matrix.target }}.tar.gz hyperion
+            tar czf hy-${{ matrix.target }}.tar.gz hy
           else
-          echo "ERROR: binary 'hyperion' not found"
+            echo "ERROR: binary 'hy' not found"
             ls -la
             exit 1
           fi
+
       - name: Archive binary (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $path = "target/${{ matrix.target }}/release"
-          $exe = "$path/hyperion.exe"
+          $exe = "$path/hy.exe"
           if (Test-Path $exe) {
             Compress-Archive `
-            -Path $exe `
-            -DestinationPath "$path/hyperion-${{ matrix.target }}.zip"
+              -Path $exe `
+              -DestinationPath "$path/hy-${{ matrix.target }}.zip"
           } else {
-            Write-Error "ERROR: binary 'hyperion.exe' not found"  
+            Write-Error "ERROR: binary 'hy.exe' not found"
             Get-ChildItem $path
             exit 1
           }
+
       - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         env:
