@@ -1,7 +1,9 @@
 mod buffer;
 mod cli;
+mod config;
 mod editor;
 mod search;
+mod syntax;
 mod terminal;
 mod ui;
 
@@ -31,7 +33,11 @@ fn main() {
         }
     } else {
         clear_screen(&mut stdout);
-        write!(stdout, "Editor de Texto - Presiona 'Ctrl + q' para salir \r\n\r\n").unwrap();
+        write!(
+            stdout,
+            "Editor de Texto - Presiona 'Ctrl + q' para salir \r\n\r\n"
+        )
+        .unwrap();
         stdout.flush().unwrap();
     }
 
