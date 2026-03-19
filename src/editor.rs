@@ -7,7 +7,13 @@ use std::io::Write;
 
 use crossterm::{cursor, terminal};
 
-use crate::{buffer::TextBuffer, search::SearchState, terminal::messages, ui};
+use crate::{
+    buffer::TextBuffer,
+    config::{SyntaxTheme, load_syntax_theme},
+    search::SearchState,
+    terminal::messages,
+    ui,
+};
 
 pub struct Editor {
     buffer: TextBuffer,
@@ -20,6 +26,7 @@ pub struct Editor {
     offset_col: usize,
     search: SearchState,
     clipboard: String,
+    syntax_theme: SyntaxTheme,
 }
 
 impl Editor {
@@ -37,6 +44,7 @@ impl Editor {
             offset_col: 0,
             search: SearchState::new(),
             clipboard: String::new(),
+            syntax_theme: load_syntax_theme(),
         }
     }
 
@@ -80,6 +88,13 @@ impl Editor {
         self.cursor_x = new_x;
     }
 
+    pub fn insert_tab(&mut self) {
+        const TAB_SPACES: &str = "    "; // 4 espacios
+        self.buffer
+            .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
+        self.cursor_x += TAB_SPACES.chars().count();
+    }
+
     pub fn delete_char(&mut self) {
         if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
             self.cursor_x -= 1;
@@ -120,6 +135,36 @@ impl Editor {
         } else if self.cursor_y < self.buffer.line_count() - 1 {
             self.cursor_y += 1;
             self.cursor_x = 0;
+        }
+    }
+
+    pub fn move_to_line_start(&mut self) {
+        self.cursor_x = 0;
+    }
+
+    pub fn move_to_line_end(&mut self) {
+        self.cursor_x = self.buffer.line_length(self.cursor_y);
+    }
+
+    pub fn move_page_up(&mut self) {
+        let page_size = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        self.cursor_y = self.cursor_y.saturating_sub(page_size);
+        self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
+    }
+
+    pub fn move_page_down(&mut self) {
+        let page_size = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let max_row = self.buffer.line_count().saturating_sub(1);
+        self.cursor_y = (self.cursor_y + page_size).min(max_row);
+        self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
+    }
+
+    pub fn delete_forward_char(&mut self) {
+        let line_length = self.buffer.line_length(self.cursor_y);
+
+        if self.cursor_x < line_length || self.cursor_y < self.buffer.line_count() - 1 {
+            self.move_right();
+            self.delete_char();
         }
     }
 
@@ -168,9 +213,7 @@ impl Editor {
         }
 
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
-        let visible_cols = width
-            .saturating_sub(line_num_width as u16)
-            .max(1) as usize;
+        let visible_cols = width.saturating_sub(line_num_width as u16).max(1) as usize;
         let line_length = self.buffer.line_length(self.cursor_y);
         let max_offset_col = line_length.saturating_sub(visible_cols);
 
@@ -309,6 +352,7 @@ impl Editor {
             return;
         }
         let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let language = ui::language_from_filename(self.filename.as_deref());
 
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
@@ -329,6 +373,10 @@ impl Editor {
                 self.offset_col,
                 &self.search,
                 i == self.cursor_y,
+                ui::SyntaxRenderConfig {
+                    language,
+                    syntax_theme: &self.syntax_theme,
+                },
             );
         }
 
@@ -364,5 +412,51 @@ impl Editor {
 
         stdout.write_all(&out).unwrap();
         stdout.flush().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Editor;
+
+    #[test]
+    fn insert_tab_adds_spaces_and_moves_cursor() {
+        let mut editor = Editor::new();
+
+        editor.insert_tab();
+
+        assert_eq!(editor.buffer.line(0), "    ");
+        assert_eq!(editor.cursor_x, 4);
+        assert_eq!(editor.cursor_y, 0);
+    }
+
+    #[test]
+    fn move_to_line_boundaries_updates_cursor() {
+        let mut editor = Editor::new();
+        editor.insert_char('h');
+        editor.insert_char('o');
+        editor.insert_char('l');
+        editor.insert_char('a');
+
+        editor.move_to_line_start();
+        assert_eq!(editor.cursor_x, 0);
+
+        editor.move_to_line_end();
+        assert_eq!(editor.cursor_x, 4);
+    }
+
+    #[test]
+    fn delete_forward_char_removes_character_under_cursor() {
+        let mut editor = Editor::new();
+        editor.insert_char('a');
+        editor.insert_char('b');
+        editor.insert_char('c');
+        editor.move_to_line_start();
+        editor.move_right();
+
+        editor.delete_forward_char();
+
+        assert_eq!(editor.buffer.line(0), "ac");
+        assert_eq!(editor.cursor_x, 1);
     }
 }

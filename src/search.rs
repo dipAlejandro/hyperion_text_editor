@@ -92,18 +92,12 @@ impl SearchState {
 
         // Buscar en todas las líneas
         for (line_idx, line) in lines.iter().enumerate() {
-            let mut char_col = 0;
-
             // Buscar todas las ocurrencias en esta línea usando índices por carácter
-            for (byte_idx, _) in line.char_indices() {
+            for (char_col, (byte_idx, _)) in line.char_indices().enumerate() {
                 if line[byte_idx..].starts_with(query) {
-                    self.matches.push(Match::new(
-                        line_idx,
-                        char_col,
-                        char_col + query_len,
-                    ));
+                    self.matches
+                        .push(Match::new(line_idx, char_col, char_col + query_len));
                 }
-                char_col += 1;
             }
         }
 

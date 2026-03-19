@@ -1,7 +1,9 @@
 mod buffer;
 mod cli;
+mod config;
 mod editor;
 mod search;
+mod syntax;
 mod terminal;
 mod ui;
 
@@ -31,7 +33,11 @@ fn main() {
         }
     } else {
         clear_screen(&mut stdout);
-        write!(stdout, "Editor de Texto - Presiona 'Ctrl + q' para salir \r\n\r\n").unwrap();
+        write!(
+            stdout,
+            "Editor de Texto - Presiona 'Ctrl + q' para salir \r\n\r\n"
+        )
+        .unwrap();
         stdout.flush().unwrap();
     }
 
@@ -124,8 +130,14 @@ fn main() {
                         KeyCode::Down => editor.move_down(),
                         KeyCode::Left => editor.move_left(),
                         KeyCode::Right => editor.move_right(),
+                        KeyCode::Home => editor.move_to_line_start(),
+                        KeyCode::End => editor.move_to_line_end(),
+                        KeyCode::PageUp => editor.move_page_up(),
+                        KeyCode::PageDown => editor.move_page_down(),
+                        KeyCode::Tab => editor.insert_tab(),
                         KeyCode::Enter => editor.new_line(),
                         KeyCode::Backspace => editor.delete_char(),
+                        KeyCode::Delete => editor.delete_forward_char(),
                         KeyCode::Char(c) => editor.insert_char(c),
                         _ => {}
                     }

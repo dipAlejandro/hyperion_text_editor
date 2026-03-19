@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crossterm::{
     ExecutableCommand, QueueableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind},
     terminal::{self, ClearType},
 };
 
@@ -79,10 +79,9 @@ pub fn read_event() -> io::Result<Event> {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => return Ok(Event::Key(key)),
             Event::Resize(_, _) => return Ok(event),
-            Event::Mouse(_)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::Paste(_) => return Ok(event),
+            Event::Mouse(_) | Event::FocusGained | Event::FocusLost | Event::Paste(_) => {
+                return Ok(event);
+            }
             _ => {}
         }
     }
