@@ -89,7 +89,7 @@ impl Editor {
     }
 
     pub fn insert_tab(&mut self) {
-        const TAB_SPACES: &str = "    ";
+        const TAB_SPACES: &str = "    "; // 4 espacios
         self.buffer
             .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
         self.cursor_x += TAB_SPACES.chars().count();
