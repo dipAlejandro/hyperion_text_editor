@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          if [ -f hyperion ]; then
+          if [ -f hy ]; then
             tar czf hyperion-${{ matrix.target }}.tar.gz hyperion
           else
           echo "ERROR: binary 'hyperion' not found"
