@@ -97,11 +97,8 @@ impl SearchState {
             // Buscar todas las ocurrencias en esta línea usando índices por carácter
             for (byte_idx, _) in line.char_indices() {
                 if line[byte_idx..].starts_with(query) {
-                    self.matches.push(Match::new(
-                        line_idx,
-                        char_col,
-                        char_col + query_len,
-                    ));
+                    self.matches
+                        .push(Match::new(line_idx, char_col, char_col + query_len));
                 }
                 char_col += 1;
             }
