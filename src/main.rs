@@ -130,8 +130,14 @@ fn main() {
                         KeyCode::Down => editor.move_down(),
                         KeyCode::Left => editor.move_left(),
                         KeyCode::Right => editor.move_right(),
+                        KeyCode::Home => editor.move_to_line_start(),
+                        KeyCode::End => editor.move_to_line_end(),
+                        KeyCode::PageUp => editor.move_page_up(),
+                        KeyCode::PageDown => editor.move_page_down(),
+                        KeyCode::Tab => editor.insert_tab(),
                         KeyCode::Enter => editor.new_line(),
                         KeyCode::Backspace => editor.delete_char(),
+                        KeyCode::Delete => editor.delete_forward_char(),
                         KeyCode::Char(c) => editor.insert_char(c),
                         _ => {}
                     }
