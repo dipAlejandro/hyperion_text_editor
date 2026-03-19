@@ -1,3 +1,5 @@
+use crossterm::style::Color;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyntaxLanguage {
     Rust,
@@ -12,6 +14,17 @@ pub enum TokenKind {
     String,
     Number,
     Comment,
+}
+
+impl TokenKind {
+    pub fn color(self) -> Color {
+        match self {
+            TokenKind::Keyword => Color::Blue,
+            TokenKind::String => Color::Green,
+            TokenKind::Number => Color::Yellow,
+            TokenKind::Comment => Color::DarkGrey,
+        }
+    }
 }
 
 pub fn detect_language(filename: Option<&str>) -> SyntaxLanguage {
