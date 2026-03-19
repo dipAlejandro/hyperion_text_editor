@@ -29,6 +29,10 @@ hyperion
 - `Ctrl+P` - Resultado anterior
 - `Ctrl+G` - Ir a línea
 - Flechas - Navegar
+- `Tab` - Insertar 4 espacios
+- `Home` / `End` - Ir al inicio / final de la línea
+- `Page Up` / `Page Down` - Mover una página
+- `Delete` / `Backspace` - Borrar carácter siguiente / anterior
 
 ## Características
 
@@ -40,7 +44,7 @@ hyperion
 
 ## Configuración de colores de sintaxis
 
-Puedes personalizar los colores de sintaxis creando un archivo de configuración en alguno de estos paths (en orden de prioridad):
+Podes personalizar los colores de sintaxis creando un archivo de configuración en alguno de estos paths (en orden de prioridad):
 
 1. Ruta indicada por la variable de entorno `HYPERION_CONFIG`
 2. `./.hyperion.toml`
