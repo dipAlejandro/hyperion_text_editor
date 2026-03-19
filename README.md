@@ -29,6 +29,10 @@ hyperion
 - `Ctrl+P` - Resultado anterior
 - `Ctrl+G` - Ir a línea
 - Flechas - Navegar
+- `Tab` - Insertar 4 espacios
+- `Home` / `End` - Ir al inicio / final de la línea
+- `Page Up` / `Page Down` - Mover una página
+- `Delete` / `Backspace` - Borrar carácter siguiente / anterior
 
 ## Características
 
