@@ -160,12 +160,8 @@ impl Editor {
     }
 
     pub fn delete_forward_char(&mut self) {
-        let line_length = self.buffer.line_length(self.cursor_y);
-
-        if self.cursor_x < line_length || self.cursor_y < self.buffer.line_count() - 1 {
-            self.move_right();
-            self.delete_char();
-        }
+        self.buffer
+            .delete_forward_char(self.cursor_y, self.cursor_x);
     }
 
     pub fn adjust_scroll(&mut self) {
@@ -366,11 +362,15 @@ impl Editor {
             // anterior:
             // line_num_digits
             let line = self.buffer.line(i);
+            let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
             ui::render_line_content(
                 &mut out,
                 &line,
                 i,
-                self.offset_col,
+                ui::LineViewport {
+                    start_col: self.offset_col,
+                    visible_cols,
+                },
                 &self.search,
                 i == self.cursor_y,
                 ui::SyntaxRenderConfig {
