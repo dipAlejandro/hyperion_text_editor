@@ -15,6 +15,12 @@ pub struct SyntaxRenderConfig<'a> {
     pub syntax_theme: &'a SyntaxTheme,
 }
 
+#[derive(Clone, Copy)]
+pub struct LineViewport {
+    pub start_col: usize,
+    pub visible_cols: usize,
+}
+
 pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16, width: usize) {
     write!(stdout, "{}", cursor::MoveTo(0, row)).unwrap();
     write!(stdout, "{}", SetForegroundColor(Color::Cyan)).unwrap();
@@ -26,7 +32,7 @@ pub fn render_line_content<W: Write>(
     stdout: &mut W,
     line: &str,
     line_idx: usize,
-    start_col: usize,
+    viewport: LineViewport,
     search: &SearchState,
     is_current_line: bool,
     syntax: SyntaxRenderConfig<'_>,
@@ -37,7 +43,12 @@ pub fn render_line_content<W: Write>(
     let mut styled = String::new();
     let mut prev_style: Option<(Option<Color>, Option<Color>)> = None;
 
-    for (col, ch) in chars.iter().enumerate().skip(start_col) {
+    for (col, ch) in chars
+        .iter()
+        .enumerate()
+        .skip(viewport.start_col)
+        .take(viewport.visible_cols)
+    {
         let fg = tokens
             .get(col)
             .and_then(|token| token.map(|t| color_for_token(t, syntax.syntax_theme)));
@@ -196,6 +207,33 @@ fn pad_to_width(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_render_line_content_limits_output_to_visible_columns() {
+        let mut out = Vec::new();
+        let search = SearchState::new();
+
+        render_line_content(
+            &mut out,
+            "abcdef",
+            0,
+            LineViewport {
+                start_col: 1,
+                visible_cols: 3,
+            },
+            &search,
+            false,
+            SyntaxRenderConfig {
+                language: SyntaxLanguage::PlainText,
+                syntax_theme: &SyntaxTheme::default(),
+            },
+        );
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("bcd"));
+        assert!(!rendered.contains("abc"));
+        assert!(!rendered.contains("bcde"));
+    }
 
     #[test]
     fn test_calculate_line_number_width() {

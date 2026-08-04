@@ -119,14 +119,12 @@ pub fn request_input<W: Write>(stdout: &mut W, prompt: &str) -> String {
                     stdout.flush().unwrap();
                 }
 
-                KeyCode::Backspace => {
-                    if !user_input.is_empty() {
-                        user_input.pop();
-                        stdout.queue(cursor::MoveLeft(1)).unwrap();
-                        write!(stdout, " ").unwrap();
-                        stdout.queue(cursor::MoveLeft(1)).unwrap();
-                        stdout.flush().unwrap();
-                    }
+                KeyCode::Backspace if !user_input.is_empty() => {
+                    user_input.pop();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
+                    write!(stdout, " ").unwrap();
+                    stdout.queue(cursor::MoveLeft(1)).unwrap();
+                    stdout.flush().unwrap();
                 }
                 _ => {}
             }
