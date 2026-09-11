@@ -54,7 +54,7 @@ fn main() {
             }
             Event::Key(key) => {
                 // Limpiar el mensaje de estado antes de procesar la siguiente tecla
-                if !editor.state_msg.starts_with("Ctrl+")
+                if !editor.state_msg.starts_with(messages::DEFAULT_STATUS)
                     && !editor.state_msg.starts_with("Nuevo archivo:")
                     && !editor.state_msg.starts_with("Archivo '")
                     && !editor.state_msg.starts_with("Encontradas")

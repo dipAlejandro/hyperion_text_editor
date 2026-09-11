@@ -141,6 +141,28 @@ impl TextBuffer {
 
         true
     }
+
+    /// Elimina el carácter en la posición indicada o une con la siguiente línea.
+    pub fn delete_forward_char(&mut self, line_idx: usize, col: usize) -> bool {
+        let line_len = self.line_length(line_idx);
+
+        if col < line_len {
+            let line_start = self.rope.line_to_char(line_idx);
+            let char_idx = line_start + col;
+            self.rope.remove(char_idx..char_idx + 1);
+            return true;
+        }
+
+        if col == line_len && line_idx + 1 < self.line_count() {
+            let line_start = self.rope.line_to_char(line_idx);
+            let newline_pos = line_start + line_len;
+            self.rope.remove(newline_pos..newline_pos + 1);
+            return true;
+        }
+
+        false
+    }
+
     /// Une la línea actual con la anterior
     ///
     /// # Argumentos

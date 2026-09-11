@@ -78,32 +78,61 @@ impl Editor {
     }
 
     pub fn insert_char(&mut self, c: char) {
-        self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
-        self.cursor_x += 1;
+    self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
+    self.cursor_x += 1;
+    self.search.clear();
+}
+
+pub fn new_line(&mut self) {
+    let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
+    self.cursor_y = new_y;
+    self.cursor_x = new_x;
+    self.search.clear();
+}
+
+pub fn insert_tab(&mut self) {
+    const TAB_SPACES: &str = "    ";
+    self.buffer
+        .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
+    self.cursor_x += TAB_SPACES.chars().count();
+    self.search.clear();
+}
+
+pub fn delete_char(&mut self) {
+    if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
+        self.cursor_x -= 1;
+    } else if self.cursor_y > 0 {
+        let prev_len = self.buffer.join_with_previous(self.cursor_y);
+        self.cursor_y -= 1;
+        self.cursor_x = prev_len;
+    }
+    self.search.clear();
+}
+
+pub fn delete_forward_char(&mut self) {
+    self.buffer
+        .delete_forward_char(self.cursor_y, self.cursor_x);
+    self.search.clear();
+}
+
+pub fn paste_clipboard(&mut self) {
+    if self.clipboard.is_empty() {
+        self.state_msg = "Portapapeles vacío".to_string();
+        return;
     }
 
-    pub fn new_line(&mut self) {
-        let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
-        self.cursor_y = new_y;
-        self.cursor_x = new_x;
-    }
+    let lines: Vec<&str> = self.clipboard.split('\n').collect();
+    self.buffer
+        .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
 
-    pub fn insert_tab(&mut self) {
-        const TAB_SPACES: &str = "    "; // 4 espacios
-        self.buffer
-            .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
-        self.cursor_x += TAB_SPACES.chars().count();
+    if lines.len() == 1 {
+        self.cursor_x += lines[0].chars().count();
+    } else {
+        self.cursor_y += lines.len() - 1;
+        self.cursor_x = lines.last().unwrap_or(&"").chars().count();
     }
-
-    pub fn delete_char(&mut self) {
-        if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
-            self.cursor_x -= 1;
-        } else if self.cursor_y > 0 {
-            let prev_len = self.buffer.join_with_previous(self.cursor_y);
-            self.cursor_y -= 1;
-            self.cursor_x = prev_len;
-        }
-    }
+    self.search.clear();
+}
 
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
@@ -159,14 +188,7 @@ impl Editor {
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
-    pub fn delete_forward_char(&mut self) {
-        let line_length = self.buffer.line_length(self.cursor_y);
-
-        if self.cursor_x < line_length || self.cursor_y < self.buffer.line_count() - 1 {
-            self.move_right();
-            self.delete_char();
-        }
-    }
+    
 
     pub fn adjust_scroll(&mut self) {
         let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
@@ -312,24 +334,7 @@ impl Editor {
         }
     }
 
-    pub fn paste_clipboard(&mut self) {
-        if self.clipboard.is_empty() {
-            self.state_msg = "Portapapeles vacío".to_string();
-            return;
-        }
-
-        let lines: Vec<&str> = self.clipboard.split('\n').collect();
-        self.buffer
-            .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
-
-        if lines.len() == 1 {
-            self.cursor_x += lines[0].chars().count();
-        } else {
-            self.cursor_y += lines.len() - 1;
-            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
-        }
-    }
-
+    
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
