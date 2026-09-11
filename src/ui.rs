@@ -15,6 +15,12 @@ pub struct SyntaxRenderConfig<'a> {
     pub syntax_theme: &'a SyntaxTheme,
 }
 
+#[derive(Clone, Copy)]
+pub struct LineViewport {
+    pub start_col: usize,
+    pub visible_cols: usize,
+}
+
 pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16, width: usize) {
     write!(stdout, "{}", cursor::MoveTo(0, row)).unwrap();
     write!(stdout, "{}", SetForegroundColor(Color::Cyan)).unwrap();
@@ -26,7 +32,7 @@ pub fn render_line_content<W: Write>(
     stdout: &mut W,
     line: &str,
     line_idx: usize,
-    start_col: usize,
+    viewport: LineViewport,
     search: &SearchState,
     is_current_line: bool,
     syntax: SyntaxRenderConfig<'_>,
@@ -37,7 +43,12 @@ pub fn render_line_content<W: Write>(
     let mut styled = String::new();
     let mut prev_style: Option<(Option<Color>, Option<Color>)> = None;
 
-    for (col, ch) in chars.iter().enumerate().skip(start_col) {
+    for (col, ch) in chars
+        .iter()
+        .enumerate()
+        .skip(viewport.start_col)
+        .take(viewport.visible_cols)
+    {
         let fg = tokens
             .get(col)
             .and_then(|token| token.map(|t| color_for_token(t, syntax.syntax_theme)));
@@ -96,15 +107,13 @@ pub fn language_from_filename(filename: Option<&str>) -> SyntaxLanguage {
 pub fn render_status_bar<W: Write>(
     stdout: &mut W,
     row: u16,
+    width: usize,
     filename: Option<&str>,
     cursor_line: usize,
     total_lines: usize,
     cursor_col: usize,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
-    let width = terminal::size()
-        .map(|(width, _)| width as usize)
-        .unwrap_or(0);
     let status_text = format!(
         "{} | Linea {}/{}, Col {}",
         file_info, cursor_line, total_lines, cursor_col
@@ -129,10 +138,7 @@ pub fn render_status_bar<W: Write>(
     .unwrap();
 }
 
-pub fn render_message<W: Write>(stdout: &mut W, row: u16, message: &str) {
-    let width = terminal::size()
-        .map(|(width, _)| width as usize)
-        .unwrap_or(0);
+pub fn render_message<W: Write>(stdout: &mut W, row: u16, width: usize, message: &str) {
     let visible_message = truncate_with_ellipsis(message, width);
     let padded_message = pad_to_width(&visible_message, width);
     write!(

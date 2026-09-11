@@ -7,29 +7,42 @@ use std::fs;
 /// operaciones para manipular el texto
 pub struct TextBuffer {
     rope: Rope,
+    synthetic_trailing_newline: bool,
 }
 
 impl TextBuffer {
     pub fn new() -> Self {
-        TextBuffer { rope: Rope::new() }
+        TextBuffer {
+            rope: Rope::new(),
+            synthetic_trailing_newline: false,
+        }
     }
 
     /// Crea un buffer desde un archivo
     pub fn from_file(path: &str) -> std::io::Result<Self> {
         let mut content = fs::read_to_string(path)?;
 
-        if content.is_empty() || !content.ends_with('\n') {
+        let synthetic_trailing_newline = !content.is_empty() && !content.ends_with('\n');
+
+        if content.is_empty() || synthetic_trailing_newline {
             content.push('\n');
         }
 
         Ok(Self {
             rope: Rope::from_str(&content),
+            synthetic_trailing_newline,
         })
     }
 
     /// Guarda el buffer en un archivo
     pub fn save_to_file(&self, path: &str) -> std::io::Result<()> {
-        fs::write(path, self.rope.to_string())
+        let mut content = self.rope.to_string();
+
+        if self.synthetic_trailing_newline && content.ends_with('\n') {
+            content.pop();
+        }
+
+        fs::write(path, content)
     }
 
     /// Obtiene la linea perteneciente al indice indicado (sin \n final)
@@ -286,5 +299,41 @@ mod tests {
         assert_eq!(buffer.line_count(), 1);
         assert_eq!(buffer.line(0), "hiby");
         assert_eq!(prev_len, 2);
+    }
+    fn temp_file_path(name: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "hyperion_text_editor_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
+    }
+
+    #[test]
+    fn test_save_preserves_missing_trailing_newline() {
+        let path = temp_file_path("no_trailing_newline");
+        std::fs::write(&path, "abc").unwrap();
+
+        let buffer = TextBuffer::from_file(path.to_str().unwrap()).unwrap();
+        buffer.save_to_file(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "abc");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_save_preserves_existing_trailing_newline() {
+        let path = temp_file_path("with_trailing_newline");
+        std::fs::write(&path, "abc\n").unwrap();
+
+        let buffer = TextBuffer::from_file(path.to_str().unwrap()).unwrap();
+        buffer.save_to_file(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "abc\n");
+        let _ = std::fs::remove_file(path);
     }
 }

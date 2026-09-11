@@ -78,61 +78,36 @@ impl Editor {
     }
 
     pub fn insert_char(&mut self, c: char) {
-    self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
-    self.cursor_x += 1;
-    self.search.clear();
-}
-
-pub fn new_line(&mut self) {
-    let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
-    self.cursor_y = new_y;
-    self.cursor_x = new_x;
-    self.search.clear();
-}
-
-pub fn insert_tab(&mut self) {
-    const TAB_SPACES: &str = "    ";
-    self.buffer
-        .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
-    self.cursor_x += TAB_SPACES.chars().count();
-    self.search.clear();
-}
-
-pub fn delete_char(&mut self) {
-    if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
-        self.cursor_x -= 1;
-    } else if self.cursor_y > 0 {
-        let prev_len = self.buffer.join_with_previous(self.cursor_y);
-        self.cursor_y -= 1;
-        self.cursor_x = prev_len;
-    }
-    self.search.clear();
-}
-
-pub fn delete_forward_char(&mut self) {
-    self.buffer
-        .delete_forward_char(self.cursor_y, self.cursor_x);
-    self.search.clear();
-}
-
-pub fn paste_clipboard(&mut self) {
-    if self.clipboard.is_empty() {
-        self.state_msg = "Portapapeles vacío".to_string();
-        return;
+        self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
+        self.cursor_x += 1;
+        self.search.clear();
     }
 
-    let lines: Vec<&str> = self.clipboard.split('\n').collect();
-    self.buffer
-        .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
-
-    if lines.len() == 1 {
-        self.cursor_x += lines[0].chars().count();
-    } else {
-        self.cursor_y += lines.len() - 1;
-        self.cursor_x = lines.last().unwrap_or(&"").chars().count();
+    pub fn new_line(&mut self) {
+        let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
+        self.cursor_y = new_y;
+        self.cursor_x = new_x;
+        self.search.clear();
     }
-    self.search.clear();
-}
+
+    pub fn insert_tab(&mut self) {
+        const TAB_SPACES: &str = "    "; // 4 espacios
+        self.buffer
+            .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
+        self.cursor_x += TAB_SPACES.chars().count();
+        self.search.clear();
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
+            self.cursor_x -= 1;
+        } else if self.cursor_y > 0 {
+            let prev_len = self.buffer.join_with_previous(self.cursor_y);
+            self.cursor_y -= 1;
+            self.cursor_x = prev_len;
+        }
+        self.search.clear();
+    }
 
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
@@ -188,7 +163,11 @@ pub fn paste_clipboard(&mut self) {
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
-    
+    pub fn delete_forward_char(&mut self) {
+        self.buffer
+            .delete_forward_char(self.cursor_y, self.cursor_x);
+        self.search.clear();
+    }
 
     pub fn adjust_scroll(&mut self) {
         let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
@@ -201,8 +180,7 @@ pub fn paste_clipboard(&mut self) {
             self.offset_row = self.cursor_y - visible_lines + 1;
         }
 
-        let line_num_digits = self.buffer.line_count().to_string().len();
-        let line_num_width = line_num_digits + 2;
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
         let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
 
         if self.cursor_x < self.offset_col {
@@ -334,7 +312,25 @@ pub fn paste_clipboard(&mut self) {
         }
     }
 
-    
+    pub fn paste_clipboard(&mut self) {
+        if self.clipboard.is_empty() {
+            self.state_msg = "Portapapeles vacío".to_string();
+            return;
+        }
+
+        let lines: Vec<&str> = self.clipboard.split('\n').collect();
+        self.buffer
+            .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
+
+        if lines.len() == 1 {
+            self.cursor_x += lines[0].chars().count();
+        } else {
+            self.cursor_y += lines.len() - 1;
+            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
+        }
+        self.search.clear();
+    }
+
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
@@ -348,9 +344,10 @@ pub fn paste_clipboard(&mut self) {
         .unwrap();
 
         let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let width = self.window_sizes.0 as usize;
 
         if visible_lines == 0 || self.window_sizes.0 == 0 {
-            ui::render_message(&mut out, 0, "Ventana demasiado pequeña");
+            ui::render_message(&mut out, 0, width, "Ventana demasiado pequeña");
             write!(out, "{}", cursor::Show).unwrap();
             stdout.write_all(&out).unwrap();
             stdout.flush().unwrap();
@@ -365,17 +362,18 @@ pub fn paste_clipboard(&mut self) {
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row) as u16;
-            let _line_num_digits = self.buffer.line_count().to_string().len();
 
-            ui::render_line_number(&mut out, line_num, window_row, line_num_width); // valor
-            // anterior:
-            // line_num_digits
+            ui::render_line_number(&mut out, line_num, window_row, line_num_width);
             let line = self.buffer.line(i);
+            let visible_cols = width.saturating_sub(line_num_width);
             ui::render_line_content(
                 &mut out,
                 &line,
                 i,
-                self.offset_col,
+                ui::LineViewport {
+                    start_col: self.offset_col,
+                    visible_cols,
+                },
                 &self.search,
                 i == self.cursor_y,
                 ui::SyntaxRenderConfig {
@@ -391,6 +389,7 @@ pub fn paste_clipboard(&mut self) {
         ui::render_status_bar(
             &mut out,
             status_row,
+            width,
             self.filename.as_deref(),
             self.cursor_y + 1,
             self.buffer.line_count(),
@@ -398,11 +397,11 @@ pub fn paste_clipboard(&mut self) {
         );
 
         if self.state_msg != messages::DEFAULT_STATUS {
-            ui::render_message(&mut out, message_row, &self.state_msg);
+            ui::render_message(&mut out, message_row, width, &self.state_msg);
         } else {
-            ui::render_message(&mut out, message_row, "");
+            ui::render_message(&mut out, message_row, width, "");
         }
-        ui::render_message(&mut out, default_row, messages::DEFAULT_STATUS);
+        ui::render_message(&mut out, default_row, width, messages::DEFAULT_STATUS);
 
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
