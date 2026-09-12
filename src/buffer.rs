@@ -176,6 +176,18 @@ impl TextBuffer {
         false
     }
 
+    /// Elimina el texto entre dos posiciones (line, col), start inclusive, end exclusivo.
+    pub fn delete_range(&mut self, start: (usize, usize), end: (usize, usize)) {
+        let start_char = self.rope.line_to_char(start.0) + start.1;
+        let end_char = self.rope.line_to_char(end.0) + end.1;
+
+        if start_char >= end_char {
+            return;
+        }
+
+        self.rope.remove(start_char..end_char);
+    }
+
     /// Une la línea actual con la anterior
     ///
     /// # Argumentos

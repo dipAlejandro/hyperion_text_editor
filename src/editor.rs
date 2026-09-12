@@ -173,6 +173,7 @@ impl Editor {
     }
 
     pub fn insert_char(&mut self, c: char) {
+        self.delete_selection();
         self.push_undo_snapshot();
         self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
         self.cursor_x += 1;
@@ -201,6 +202,9 @@ impl Editor {
     }
 
     pub fn delete_char(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
         self.push_undo_snapshot();
         if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
             self.cursor_x -= 1;
@@ -210,6 +214,20 @@ impl Editor {
             self.cursor_x = prev_len;
         }
         self.search.clear();
+    }
+
+    fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection_range() else {
+            return false;
+        };
+
+        self.push_undo_snapshot();
+        self.buffer.delete_range(start, end);
+        self.cursor_y = start.0;
+        self.cursor_x = start.1;
+        self.selection_anchor = None;
+        self.search.clear();
+        true
     }
 
     pub fn move_up(&mut self) {
@@ -267,6 +285,9 @@ impl Editor {
     }
 
     pub fn delete_forward_char(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
         self.push_undo_snapshot();
         self.buffer
             .delete_forward_char(self.cursor_y, self.cursor_x);
@@ -422,6 +443,8 @@ impl Editor {
             self.state_msg = "Portapapeles vacío".to_string();
             return;
         }
+
+        self.delete_selection();
 
         let lines: Vec<&str> = self.clipboard.split('\n').collect();
         self.buffer
