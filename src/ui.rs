@@ -133,11 +133,13 @@ pub fn render_status_bar<W: Write>(
     cursor_line: usize,
     total_lines: usize,
     cursor_col: usize,
+    dirty: bool,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
+    let dirty_marker = if dirty { " *" } else { "" };
     let status_text = format!(
-        "{} | Linea {}/{}, Col {}",
-        file_info, cursor_line, total_lines, cursor_col
+        "{}{} | Linea {}/{}, Col {}",
+        file_info, dirty_marker, cursor_line, total_lines, cursor_col
     );
     let visible_text = truncate_with_ellipsis(&status_text, width);
     let padded_text = pad_to_width(&visible_text, width);

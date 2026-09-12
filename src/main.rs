@@ -53,6 +53,10 @@ fn main() {
                 continue;
             }
             Event::Key(key) => {
+                if !keys::is_quit(&key) {
+                    editor.reset_pending_quit();
+                }
+
                 // Limpiar el mensaje de estado antes de procesar la siguiente tecla
                 if !editor.state_msg.starts_with(messages::DEFAULT_STATUS)
                     && !editor.state_msg.starts_with("Nuevo archivo:")
@@ -65,7 +69,12 @@ fn main() {
                 }
 
                 if keys::is_quit(&key) {
-                    break;
+                    if editor.confirm_quit() {
+                        break;
+                    }
+
+                    editor.write(&mut stdout);
+                    continue;
                 } else if keys::is_save(&key) {
                     let path = match &editor.filename {
                         Some(name) => name.clone(),

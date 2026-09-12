@@ -31,6 +31,8 @@ pub struct Editor {
     syntax_theme: SyntaxTheme,
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
+    dirty: bool,
+    pending_quit: bool,
 }
 
 struct UndoState {
@@ -59,6 +61,8 @@ impl Editor {
             selection_anchor: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            dirty: false,
+            pending_quit: false,
         }
     }
 
@@ -72,6 +76,7 @@ impl Editor {
             self.undo_stack.remove(0);
         }
         self.redo_stack.clear();
+        self.dirty = true
     }
 
     pub fn undo(&mut self) {
@@ -122,6 +127,8 @@ impl Editor {
                 self.cursor_y = 0;
                 self.offset_row = 0;
                 self.offset_col = 0;
+                self.dirty = false;
+                self.pending_quit = false;
                 self.state_msg = format!("Archivo '{}' cargado correctamente", path);
             }
             Err(e) => {
@@ -135,6 +142,8 @@ impl Editor {
             Ok(_) => {
                 self.filename = Some(path.to_string());
                 self.state_msg = format!("Archivo '{}' guardado correctamente.", path);
+                self.dirty = false;
+                self.pending_quit = false;
             }
             Err(e) => {
                 self.state_msg = format!("Error al intentar guardar el archivo: {}", e);
@@ -142,11 +151,36 @@ impl Editor {
         }
     }
 
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Marca que se pidió salir con cambios sin guardar. Devuelve true
+    /// si ya se había pedido antes (confirmación) y por lo tanto se puede salir.
+    pub fn confirm_quit(&mut self) -> bool {
+        if !self.dirty {
+            return true;
+        }
+
+        if self.pending_quit {
+            return true;
+        }
+
+        self.pending_quit = true;
+        self.state_msg =
+            "Cambios sin guardar. Presioná Ctrl+Q de nuevo para salir sin guardar.".to_string();
+        false
+    }
+
     pub fn insert_char(&mut self, c: char) {
         self.push_undo_snapshot();
         self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
         self.cursor_x += 1;
         self.search.clear();
+    }
+
+    pub fn reset_pending_quit(&mut self) {
+        self.pending_quit = false;
     }
 
     pub fn new_line(&mut self) {
@@ -532,6 +566,7 @@ impl Editor {
             self.cursor_y + 1,
             self.buffer.line_count(),
             self.cursor_x + 1,
+            self.is_dirty(),
         );
 
         if self.state_msg != messages::DEFAULT_STATUS {
