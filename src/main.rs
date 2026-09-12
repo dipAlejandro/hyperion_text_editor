@@ -7,7 +7,7 @@ mod syntax;
 mod terminal;
 mod ui;
 
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use std::io::Write;
 
 use crate::{
@@ -120,16 +120,46 @@ fn main() {
                             editor.state_msg = messages::INVALID_NUMBERS.to_string();
                         }
                     }
-                } else if keys::is_copy(&key) {
+                } else if keys::is_copy_line(&key) {
                     editor.copy_line();
+                } else if keys::is_copy_selection(&key) {
+                    editor.copy_selection();
                 } else if keys::is_paste(&key) {
                     editor.paste_clipboard();
                 } else {
                     match key.code {
-                        KeyCode::Up => editor.move_up(),
-                        KeyCode::Down => editor.move_down(),
-                        KeyCode::Left => editor.move_left(),
-                        KeyCode::Right => editor.move_right(),
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            editor.start_or_clear_selection();
+                            editor.move_up();
+                        }
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            editor.start_or_clear_selection();
+                            editor.move_down();
+                        }
+                        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            editor.start_or_clear_selection();
+                            editor.move_left();
+                        }
+                        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            editor.start_or_clear_selection();
+                            editor.move_right();
+                        }
+                        KeyCode::Up => {
+                            editor.clear_selection();
+                            editor.move_up();
+                        }
+                        KeyCode::Down => {
+                            editor.clear_selection();
+                            editor.move_down();
+                        }
+                        KeyCode::Left => {
+                            editor.clear_selection();
+                            editor.move_left();
+                        }
+                        KeyCode::Right => {
+                            editor.clear_selection();
+                            editor.move_right();
+                        }
                         KeyCode::Home => editor.move_to_line_start(),
                         KeyCode::End => editor.move_to_line_end(),
                         KeyCode::PageUp => editor.move_page_up(),

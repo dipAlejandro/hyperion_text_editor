@@ -26,6 +26,7 @@ pub struct Editor {
     offset_col: usize,
     search: SearchState,
     clipboard: String,
+    selection_anchor: Option<(usize, usize)>, // (line, col)
     syntax_theme: SyntaxTheme,
 }
 
@@ -45,6 +46,7 @@ impl Editor {
             search: SearchState::new(),
             clipboard: String::new(),
             syntax_theme: load_syntax_theme(),
+            selection_anchor: None,
         }
     }
 
@@ -331,6 +333,60 @@ impl Editor {
         self.search.clear();
     }
 
+    pub fn start_or_clear_selection(&mut self) {
+        if self.selection_anchor.is_none() {
+            self.selection_anchor = Some((self.cursor_y, self.cursor_x));
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    pub fn copy_selection(&mut self) {
+        let Some(anchor) = self.selection_anchor else {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        };
+
+        let (start, end) = order_positions(anchor, (self.cursor_y, self.cursor_x));
+
+        if start == end {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        }
+
+        self.clipboard = self.extract_range(start, end);
+        self.state_msg = "Selección copiada".to_string();
+    }
+
+    fn extract_range(&self, start: (usize, usize), end: (usize, usize)) -> String {
+        if start.0 == end.0 {
+            let line = self.buffer.line(start.0);
+            return line.chars().skip(start.1).take(end.1 - start.1).collect();
+        }
+
+        let mut result = String::new();
+        for line_idx in start.0..=end.0 {
+            let line = self.buffer.line(line_idx);
+            let chars: Vec<char> = line.chars().collect();
+
+            let slice: String = if line_idx == start.0 {
+                chars[start.1..].iter().collect()
+            } else if line_idx == end.0 {
+                chars[..end.1.min(chars.len())].iter().collect()
+            } else {
+                chars.iter().collect()
+            };
+
+            result.push_str(&slice);
+            if line_idx != end.0 {
+                result.push('\n');
+            }
+        }
+
+        result
+    }
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
@@ -417,6 +473,10 @@ impl Editor {
         stdout.write_all(&out).unwrap();
         stdout.flush().unwrap();
     }
+}
+
+fn order_positions(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
+    if a <= b { (a, b) } else { (b, a) }
 }
 
 #[cfg(test)]

@@ -37,7 +37,7 @@ pub fn render_line_content<W: Write>(
     is_current_line: bool,
     syntax: SyntaxRenderConfig<'_>,
 ) {
-    let line_bg = is_current_line.then_some(Color::DarkGrey);
+    let line_bg = is_current_line.then_some(Color::Reset);
     let chars: Vec<char> = line.chars().collect();
     let tokens = tokenize_line(line, syntax.language);
     let mut styled = String::new();

@@ -39,8 +39,20 @@ pub mod keys {
         matches!(key.code, KeyCode::Char('g')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
-    pub fn is_copy(key: &KeyEvent) -> bool {
+    /*pub fn is_copy(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }*/
+
+    pub fn is_copy_selection(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_copy_line(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
     }
 
     pub fn is_paste(key: &KeyEvent) -> bool {
