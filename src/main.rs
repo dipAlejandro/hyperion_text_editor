@@ -120,6 +120,10 @@ fn main() {
                             editor.state_msg = messages::INVALID_NUMBERS.to_string();
                         }
                     }
+                } else if keys::is_undo(&key) {
+                    editor.undo();
+                } else if keys::is_redo(&key) {
+                    editor.redo();
                 } else if keys::is_copy_line(&key) {
                     editor.copy_line();
                 } else if keys::is_copy_selection(&key) {

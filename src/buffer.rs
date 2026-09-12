@@ -228,6 +228,14 @@ impl TextBuffer {
         let line_len = self.line_length(line_idx);
         col.min(line_len)
     }
+
+    pub fn snapshot(&self) -> Rope {
+        self.rope.clone()
+    }
+
+    pub fn restore(&mut self, rope: Rope) {
+        self.rope = rope;
+    }
 }
 
 impl Default for TextBuffer {

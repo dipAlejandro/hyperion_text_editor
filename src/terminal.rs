@@ -2,9 +2,10 @@
 use std::io::{self, Write};
 
 use crossterm::{
-    ExecutableCommand, QueueableCommand, cursor,
+    cursor,
     event::{self, Event, KeyCode, KeyEventKind},
     terminal::{self, ClearType},
+    ExecutableCommand, QueueableCommand,
 };
 
 // Constantes para declarar teclas de control
@@ -58,12 +59,24 @@ pub mod keys {
     pub fn is_paste(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
+
+    pub fn is_undo(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('z'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_redo(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('z') | KeyCode::Char('y'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && (key.code == KeyCode::Char('y') || key.modifiers.contains(KeyModifiers::SHIFT))
+    }
 }
 
 // Constantes para manejar el estado por defecto
 pub mod messages {
     pub const DEFAULT_STATUS: &str =
-        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+C: Copiar | Ctrl+V: Pegar";
+        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+Z: Deshacer | Ctrl+Y: Rehacer";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
     pub const OPEN_CANCELLED: &str = "Apertura cancelada";
     pub const SEARCH_CANCELLED: &str = "Búsqueda cancelada";

@@ -6,6 +6,7 @@
 use std::io::Write;
 
 use crossterm::{cursor, terminal};
+use ropey::Rope;
 
 use crate::{
     buffer::TextBuffer,
@@ -28,9 +29,18 @@ pub struct Editor {
     clipboard: String,
     selection_anchor: Option<(usize, usize)>, // (line, col)
     syntax_theme: SyntaxTheme,
+    undo_stack: Vec<UndoState>,
+    redo_stack: Vec<UndoState>,
+}
+
+struct UndoState {
+    rope: Rope,
+    cursor_x: usize,
+    cursor_y: usize,
 }
 
 impl Editor {
+    const MAX_UNDO_HISTORY: usize = 200;
     pub fn new() -> Self {
         let window_sizes = terminal::size().unwrap_or((80, 24));
 
@@ -47,9 +57,62 @@ impl Editor {
             clipboard: String::new(),
             syntax_theme: load_syntax_theme(),
             selection_anchor: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
+    fn push_undo_snapshot(&mut self) {
+        self.undo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+        if self.undo_stack.len() > Self::MAX_UNDO_HISTORY {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    pub fn undo(&mut self) {
+        let Some(state) = self.undo_stack.pop() else {
+            self.state_msg = "Nada para deshacer".to_string();
+            return;
+        };
+
+        self.redo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+
+        self.buffer.restore(state.rope);
+        self.cursor_x = state.cursor_x;
+        self.cursor_y = state.cursor_y;
+        self.search.clear();
+        self.selection_anchor = None;
+        self.state_msg = "Deshecho".to_string();
+    }
+
+    pub fn redo(&mut self) {
+        let Some(state) = self.redo_stack.pop() else {
+            self.state_msg = "Nada para rehacer".to_string();
+            return;
+        };
+
+        self.undo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+
+        self.buffer.restore(state.rope);
+        self.cursor_x = state.cursor_x;
+        self.cursor_y = state.cursor_y;
+        self.search.clear();
+        self.selection_anchor = None;
+        self.state_msg = "Rehecho".to_string();
+    }
     pub fn open_file(&mut self, path: &str) {
         match TextBuffer::from_file(path) {
             Ok(buffer) => {
@@ -80,12 +143,14 @@ impl Editor {
     }
 
     pub fn insert_char(&mut self, c: char) {
+        self.push_undo_snapshot();
         self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
         self.cursor_x += 1;
         self.search.clear();
     }
 
     pub fn new_line(&mut self) {
+        self.push_undo_snapshot();
         let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
         self.cursor_y = new_y;
         self.cursor_x = new_x;
@@ -93,6 +158,7 @@ impl Editor {
     }
 
     pub fn insert_tab(&mut self) {
+        self.push_undo_snapshot();
         const TAB_SPACES: &str = "    "; // 4 espacios
         self.buffer
             .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
@@ -101,6 +167,7 @@ impl Editor {
     }
 
     pub fn delete_char(&mut self) {
+        self.push_undo_snapshot();
         if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
@@ -166,6 +233,7 @@ impl Editor {
     }
 
     pub fn delete_forward_char(&mut self) {
+        self.push_undo_snapshot();
         self.buffer
             .delete_forward_char(self.cursor_y, self.cursor_x);
         self.search.clear();
@@ -315,6 +383,7 @@ impl Editor {
     }
 
     pub fn paste_clipboard(&mut self) {
+        self.push_undo_snapshot();
         if self.clipboard.is_empty() {
             self.state_msg = "Portapapeles vacío".to_string();
             return;
