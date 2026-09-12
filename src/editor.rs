@@ -9,7 +9,7 @@ use crossterm::{cursor, terminal};
 
 use crate::{
     buffer::TextBuffer,
-    config::{SyntaxTheme, load_syntax_theme},
+    config::{load_syntax_theme, SyntaxTheme},
     search::SearchState,
     terminal::messages,
     ui,
@@ -387,6 +387,17 @@ impl Editor {
 
         result
     }
+
+    pub fn selection_range(&self) -> Option<((usize, usize), (usize, usize))> {
+        let anchor = self.selection_anchor?;
+        let cursor = (self.cursor_y, self.cursor_x);
+        if anchor == cursor {
+            return None;
+        }
+
+        Some(order_positions(anchor, cursor))
+    }
+
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
@@ -415,6 +426,8 @@ impl Editor {
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
+        let selection = self.selection_range();
+
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row) as u16;
@@ -431,11 +444,11 @@ impl Editor {
                     visible_cols,
                 },
                 &self.search,
-                i == self.cursor_y,
                 ui::SyntaxRenderConfig {
                     language,
                     syntax_theme: &self.syntax_theme,
                 },
+                selection,
             );
         }
 
@@ -476,7 +489,11 @@ impl Editor {
 }
 
 fn order_positions(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
-    if a <= b { (a, b) } else { (b, a) }
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
 }
 
 #[cfg(test)]
