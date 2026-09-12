@@ -16,7 +16,16 @@ use crate::{
     terminal::{clear_screen, keys, messages, request_input},
 };
 
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info|{
+        let _ = terminal::cleanup();
+        default_hook(info);
+    }));
+}
+
 fn main() {
+    install_panic_hook();
     let args = Args::parse_args();
 
     let mut stdout = terminal::init_raw_mode().unwrap();
