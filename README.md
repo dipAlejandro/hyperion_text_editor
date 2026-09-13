@@ -36,11 +36,11 @@ hyperion
 
 ## Características
 
+- ⚡ Rápido y ligero
 - ✨ Soporte UTF-8 completo
 - 🔍 Búsqueda con resaltado
 - 📝 Números de línea
 - 🎯 Scroll automático
-- ⚡ Rápido y ligero
 
 ## Configuración de colores de sintaxis
 

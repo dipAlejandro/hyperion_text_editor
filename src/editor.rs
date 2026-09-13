@@ -229,7 +229,16 @@ impl Editor {
         self.search.clear();
         true
     }
+pub fn cut_selection(&mut self) {
+    let Some((start, end)) = self.selection_range() else {
+        self.state_msg = "Nada seleccionado".to_string();
+        return;
+    };
 
+    self.clipboard = self.extract_range(start, end);
+    self.delete_selection();
+    self.state_msg = "Selección cortada".to_string();
+}
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;

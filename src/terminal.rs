@@ -60,6 +60,10 @@ pub mod keys {
         matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
+    pub fn is_cut(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('x')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
     pub fn is_undo(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('z'))
             && key.modifiers.contains(KeyModifiers::CONTROL)
