@@ -128,6 +128,13 @@ impl TextBuffer {
 
         self.rope.insert(char_idx, text);
     }
+    
+    /// Devuelve la indentación (espacios/tabs iniciales) de una línea.
+    pub fn leading_whitespace(&self, line_idx: usize) -> String {
+        let line = self.line(line_idx);
+        line.chars().take_while(|c| *c == ' ' || *c == '\t').collect()
+    }    
+
     /// Elimina el carácter antes de la posición especificada
     ///
     /// # Argumentos

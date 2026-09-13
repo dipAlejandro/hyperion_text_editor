@@ -185,10 +185,19 @@ impl Editor {
     }
 
     pub fn new_line(&mut self) {
+        self.delete_selection();
         self.push_undo_snapshot();
+        
+        let indent = self.buffer.leading_whitespace(self.cursor_y);
         let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
         self.cursor_y = new_y;
         self.cursor_x = new_x;
+
+        if !indent.is_empty() {
+            self.buffer.insert_str(self.cursor_y, self.cursor_x, &indent);
+            self.cursor_x += indent.chars().count();
+        } 
+        
         self.search.clear();
     }
 
