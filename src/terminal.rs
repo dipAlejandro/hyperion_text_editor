@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     terminal::{self, ClearType},
     ExecutableCommand, QueueableCommand,
 };
@@ -107,12 +107,16 @@ pub mod messages {
 
 pub fn init_raw_mode() -> io::Result<io::Stdout> {
     terminal::enable_raw_mode()?;
-    Ok(io::stdout())
+    let mut stdout = io::stdout();
+    stdout.execute(EnableMouseCapture)?;
+    Ok(stdout)
 }
 
 pub fn cleanup() -> io::Result<()> {
     terminal::disable_raw_mode()?;
-    io::stdout().execute(cursor::Show)?;
+    let mut stdout = io::stdout();
+    stdout.execute(DisableMouseCapture)?;
+    stdout.execute(cursor::Show)?;
     Ok(())
 }
 

@@ -381,6 +381,40 @@ impl Editor {
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
+    /// Posiciona el cursor a partir de coordenadas de pantalla (click de mouse).
+    pub fn click_at(&mut self, screen_col: u16, screen_row: u16) {
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let clicked_row = screen_row as usize;
+
+        if visible_lines == 0 || clicked_row >= visible_lines {
+            return;
+        }
+
+        let last_line = self.buffer.line_count().saturating_sub(1);
+        self.cursor_y = (self.offset_row + clicked_row).min(last_line);
+
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let clicked_col = screen_col as usize;
+        let target_col = clicked_col
+            .saturating_sub(line_num_width)
+            .saturating_add(self.offset_col);
+
+        self.cursor_x = self.buffer.clamp_column(self.cursor_y, target_col);
+        self.clear_selection();
+    }
+
+    /// Desplaza la vista hacia arriba (rueda del mouse).
+    pub fn scroll_up(&mut self, lines: usize) {
+        self.offset_row = self.offset_row.saturating_sub(lines);
+    }
+
+    /// Desplaza la vista hacia abajo (rueda del mouse).
+    pub fn scroll_down(&mut self, lines: usize) {
+        let visible_lines = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let max_offset = self.buffer.line_count().saturating_sub(visible_lines);
+        self.offset_row = (self.offset_row + lines).min(max_offset);
+    }
+
     pub fn delete_forward_char(&mut self) {
         if self.delete_selection() {
             return;

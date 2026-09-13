@@ -7,7 +7,9 @@ mod syntax;
 mod terminal;
 mod ui;
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
+};
 use std::io::Write;
 
 use crate::{
@@ -128,6 +130,19 @@ fn main() {
         match event {
             Event::Resize(width, height) => {
                 editor.update_window_size(width, height);
+                editor.adjust_scroll();
+                editor.write(&mut stdout);
+                continue;
+            }
+            Event::Mouse(mouse_event) => {
+                match mouse_event.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        editor.click_at(mouse_event.column, mouse_event.row);
+                    }
+                    MouseEventKind::ScrollUp => editor.scroll_up(3),
+                    MouseEventKind::ScrollDown => editor.scroll_down(3),
+                    _ => {}
+                }
                 editor.adjust_scroll();
                 editor.write(&mut stdout);
                 continue;
