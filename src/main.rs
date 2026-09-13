@@ -142,6 +142,8 @@ fn main() {
                     editor.undo();
                 } else if keys::is_redo(&key) {
                     editor.redo();
+                } else if keys::is_select_all(&key) {
+                    editor.select_all();
                 } else if keys::is_cut(&key) {
                     editor.cut_selection();
                 } else if keys::is_copy_line(&key) {

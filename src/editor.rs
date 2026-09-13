@@ -229,6 +229,15 @@ impl Editor {
         self.search.clear();
         true
     }
+pub fn select_all(&mut self) {
+    let last_line = self.buffer.line_count() - 1;
+    let last_col = self.buffer.line_length(last_line);
+
+    self.selection_anchor = Some((0, 0));
+    self.cursor_y = last_line;
+    self.cursor_x = last_col;
+    self.state_msg = "Todo seleccionado".to_string();
+}
 pub fn cut_selection(&mut self) {
     let Some((start, end)) = self.selection_range() else {
         self.state_msg = "Nada seleccionado".to_string();
