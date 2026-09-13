@@ -6,10 +6,11 @@
 use std::io::Write;
 
 use crossterm::{cursor, terminal};
+use ropey::Rope;
 
 use crate::{
     buffer::TextBuffer,
-    config::{SyntaxTheme, load_syntax_theme},
+    config::{load_syntax_theme, SyntaxTheme},
     search::SearchState,
     terminal::messages,
     ui,
@@ -26,10 +27,23 @@ pub struct Editor {
     offset_col: usize,
     search: SearchState,
     clipboard: String,
+    selection_anchor: Option<(usize, usize)>, // (line, col)
+    replacement: String,
     syntax_theme: SyntaxTheme,
+    undo_stack: Vec<UndoState>,
+    redo_stack: Vec<UndoState>,
+    dirty: bool,
+    pending_quit: bool,
+}
+
+struct UndoState {
+    rope: Rope,
+    cursor_x: usize,
+    cursor_y: usize,
 }
 
 impl Editor {
+    const MAX_UNDO_HISTORY: usize = 200;
     pub fn new() -> Self {
         let window_sizes = terminal::size().unwrap_or((80, 24));
 
@@ -45,9 +59,134 @@ impl Editor {
             search: SearchState::new(),
             clipboard: String::new(),
             syntax_theme: load_syntax_theme(),
+            replacement: String::new(),
+            selection_anchor: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            dirty: false,
+            pending_quit: false,
         }
     }
 
+    fn push_undo_snapshot(&mut self) {
+        self.undo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+        if self.undo_stack.len() > Self::MAX_UNDO_HISTORY {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        self.dirty = true
+    }
+
+    pub fn undo(&mut self) {
+        let Some(state) = self.undo_stack.pop() else {
+            self.state_msg = "Nada para deshacer".to_string();
+            return;
+        };
+
+        self.redo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+
+        self.buffer.restore(state.rope);
+        self.cursor_x = state.cursor_x;
+        self.cursor_y = state.cursor_y;
+        self.search.clear();
+        self.selection_anchor = None;
+        self.state_msg = "Deshecho".to_string();
+    }
+
+    pub fn redo(&mut self) {
+        let Some(state) = self.redo_stack.pop() else {
+            self.state_msg = "Nada para rehacer".to_string();
+            return;
+        };
+
+        self.undo_stack.push(UndoState {
+            rope: self.buffer.snapshot(),
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+        });
+
+        self.buffer.restore(state.rope);
+        self.cursor_x = state.cursor_x;
+        self.cursor_y = state.cursor_y;
+        self.search.clear();
+        self.selection_anchor = None;
+        self.state_msg = "Rehecho".to_string();
+    }
+    pub fn set_replacement(&mut self, replacement: &str) {
+        self.replacement = replacement.to_string();
+    }
+
+    pub fn has_replacement(&self) -> bool {
+        !self.replacement.is_empty()
+    }
+
+    pub fn replace_current_match(&mut self) {
+        let Some(m) = self.search.current_match().cloned() else {
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
+            return;
+        };
+
+        self.push_undo_snapshot();
+
+        self.buffer.replace_range(
+            (m.line, m.start_col),
+            (m.line, m.end_col),
+            &self.replacement,
+        );
+
+        // Recalcular matches ya que el texto cambió.
+        let query = self.search.query().cloned().unwrap_or_default();
+        let lines: Vec<String> = self.buffer.iter_lines().collect();
+        let count = self.search.search(&query, &lines);
+
+        self.cursor_y = m.line;
+        self.cursor_x = m.start_col + self.replacement.chars().count();
+
+        if count > 0 {
+            self.jump_to_current_match();
+            self.state_msg = format!("Reemplazado. {} coincidencias restantes", count);
+        } else {
+            self.state_msg = "Reemplazado. Sin más coincidencias".to_string();
+        }
+    }
+    pub fn replace_all_matches(&mut self) {
+        let Some(query) = self.search.query().cloned() else {
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
+            return;
+        };
+        let replacement = self.replacement.clone();
+
+        let lines: Vec<String> = self.buffer.iter_lines().collect();
+        let mut temp_search = SearchState::new();
+        let count = temp_search.search(&query, &lines);
+
+        if count == 0 {
+            self.state_msg = format!("No se encontró '{}'", query);
+            return;
+        }
+
+        self.push_undo_snapshot();
+
+        // Reemplazar de atrás hacia adelante para no invalidar posiciones ya calculadas.
+        for m in temp_search.matches().iter().rev() {
+            self.buffer
+                .replace_range((m.line, m.start_col), (m.line, m.end_col), &replacement);
+        }
+
+        self.cursor_y = 0;
+        self.cursor_x = 0;
+        self.selection_anchor = None;
+        self.search.clear();
+        self.state_msg = format!("{} reemplazos de '{}' por '{}'", count, query, replacement);
+    }
     pub fn open_file(&mut self, path: &str) {
         match TextBuffer::from_file(path) {
             Ok(buffer) => {
@@ -57,6 +196,8 @@ impl Editor {
                 self.cursor_y = 0;
                 self.offset_row = 0;
                 self.offset_col = 0;
+                self.dirty = false;
+                self.pending_quit = false;
                 self.state_msg = format!("Archivo '{}' cargado correctamente", path);
             }
             Err(e) => {
@@ -70,6 +211,8 @@ impl Editor {
             Ok(_) => {
                 self.filename = Some(path.to_string());
                 self.state_msg = format!("Archivo '{}' guardado correctamente.", path);
+                self.dirty = false;
+                self.pending_quit = false;
             }
             Err(e) => {
                 self.state_msg = format!("Error al intentar guardar el archivo: {}", e);
@@ -77,25 +220,71 @@ impl Editor {
         }
     }
 
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Marca que se pidió salir con cambios sin guardar. Devuelve true
+    /// si ya se había pedido antes (confirmación) y por lo tanto se puede salir.
+    pub fn confirm_quit(&mut self) -> bool {
+        if !self.dirty {
+            return true;
+        }
+
+        if self.pending_quit {
+            return true;
+        }
+
+        self.pending_quit = true;
+        self.state_msg =
+            "Cambios sin guardar. Presioná Ctrl+Q de nuevo para salir sin guardar.".to_string();
+        false
+    }
+
     pub fn insert_char(&mut self, c: char) {
+        self.delete_selection();
+        self.push_undo_snapshot();
         self.buffer.insert_char(self.cursor_y, self.cursor_x, c);
         self.cursor_x += 1;
+        self.search.clear();
+    }
+
+    pub fn reset_pending_quit(&mut self) {
+        self.pending_quit = false;
     }
 
     pub fn new_line(&mut self) {
+        self.delete_selection();
+        self.push_undo_snapshot();
+
+        let indent = self.buffer.leading_whitespace(self.cursor_y);
         let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
         self.cursor_y = new_y;
         self.cursor_x = new_x;
+
+        if !indent.is_empty() {
+            self.buffer
+                .insert_str(self.cursor_y, self.cursor_x, &indent);
+            self.cursor_x += indent.chars().count();
+        }
+
+        self.search.clear();
     }
 
     pub fn insert_tab(&mut self) {
+        self.push_undo_snapshot();
         const TAB_SPACES: &str = "    "; // 4 espacios
         self.buffer
             .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
         self.cursor_x += TAB_SPACES.chars().count();
+        self.search.clear();
     }
 
     pub fn delete_char(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        self.push_undo_snapshot();
         if self.buffer.delete_char(self.cursor_y, self.cursor_x) {
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
@@ -103,8 +292,41 @@ impl Editor {
             self.cursor_y -= 1;
             self.cursor_x = prev_len;
         }
+        self.search.clear();
     }
 
+    fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection_range() else {
+            return false;
+        };
+
+        self.push_undo_snapshot();
+        self.buffer.delete_range(start, end);
+        self.cursor_y = start.0;
+        self.cursor_x = start.1;
+        self.selection_anchor = None;
+        self.search.clear();
+        true
+    }
+    pub fn select_all(&mut self) {
+        let last_line = self.buffer.line_count() - 1;
+        let last_col = self.buffer.line_length(last_line);
+
+        self.selection_anchor = Some((0, 0));
+        self.cursor_y = last_line;
+        self.cursor_x = last_col;
+        self.state_msg = "Todo seleccionado".to_string();
+    }
+    pub fn cut_selection(&mut self) {
+        let Some((start, end)) = self.selection_range() else {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        };
+
+        self.clipboard = self.extract_range(start, end);
+        self.delete_selection();
+        self.state_msg = "Selección cortada".to_string();
+    }
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
@@ -159,13 +381,48 @@ impl Editor {
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
-    pub fn delete_forward_char(&mut self) {
-        let line_length = self.buffer.line_length(self.cursor_y);
+    /// Posiciona el cursor a partir de coordenadas de pantalla (click de mouse).
+    pub fn click_at(&mut self, screen_col: u16, screen_row: u16) {
+        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let clicked_row = screen_row as usize;
 
-        if self.cursor_x < line_length || self.cursor_y < self.buffer.line_count() - 1 {
-            self.move_right();
-            self.delete_char();
+        if visible_lines == 0 || clicked_row >= visible_lines {
+            return;
         }
+
+        let last_line = self.buffer.line_count().saturating_sub(1);
+        self.cursor_y = (self.offset_row + clicked_row).min(last_line);
+
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let clicked_col = screen_col as usize;
+        let target_col = clicked_col
+            .saturating_sub(line_num_width)
+            .saturating_add(self.offset_col);
+
+        self.cursor_x = self.buffer.clamp_column(self.cursor_y, target_col);
+        self.clear_selection();
+    }
+
+    /// Desplaza la vista hacia arriba (rueda del mouse).
+    pub fn scroll_up(&mut self, lines: usize) {
+        self.offset_row = self.offset_row.saturating_sub(lines);
+    }
+
+    /// Desplaza la vista hacia abajo (rueda del mouse).
+    pub fn scroll_down(&mut self, lines: usize) {
+        let visible_lines = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let max_offset = self.buffer.line_count().saturating_sub(visible_lines);
+        self.offset_row = (self.offset_row + lines).min(max_offset);
+    }
+
+    pub fn delete_forward_char(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        self.push_undo_snapshot();
+        self.buffer
+            .delete_forward_char(self.cursor_y, self.cursor_x);
+        self.search.clear();
     }
 
     pub fn adjust_scroll(&mut self) {
@@ -179,8 +436,7 @@ impl Editor {
             self.offset_row = self.cursor_y - visible_lines + 1;
         }
 
-        let line_num_digits = self.buffer.line_count().to_string().len();
-        let line_num_width = line_num_digits + 2;
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
         let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
 
         if self.cursor_x < self.offset_col {
@@ -226,6 +482,7 @@ impl Editor {
     }
 
     pub fn search(&mut self, query: &str) {
+        self.replacement.clear();
         let lines: Vec<String> = self.buffer.iter_lines().collect();
         let count = self.search.search(query, &lines);
 
@@ -313,10 +570,13 @@ impl Editor {
     }
 
     pub fn paste_clipboard(&mut self) {
+        self.push_undo_snapshot();
         if self.clipboard.is_empty() {
             self.state_msg = "Portapapeles vacío".to_string();
             return;
         }
+
+        self.delete_selection();
 
         let lines: Vec<&str> = self.clipboard.split('\n').collect();
         self.buffer
@@ -328,8 +588,76 @@ impl Editor {
             self.cursor_y += lines.len() - 1;
             self.cursor_x = lines.last().unwrap_or(&"").chars().count();
         }
+        self.search.clear();
     }
 
+    pub fn start_or_clear_selection(&mut self) {
+        if self.selection_anchor.is_none() {
+            self.selection_anchor = Some((self.cursor_y, self.cursor_x));
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    pub fn copy_selection(&mut self) {
+        let Some(anchor) = self.selection_anchor else {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        };
+
+        let (start, end) = order_positions(anchor, (self.cursor_y, self.cursor_x));
+
+        if start == end {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        }
+
+        self.clipboard = self.extract_range(start, end);
+        self.state_msg = "Selección copiada".to_string();
+    }
+
+    fn extract_range(&self, start: (usize, usize), end: (usize, usize)) -> String {
+        if start.0 == end.0 {
+            let line = self.buffer.line(start.0);
+            return line.chars().skip(start.1).take(end.1 - start.1).collect();
+        }
+
+        let mut result = String::new();
+        for line_idx in start.0..=end.0 {
+            let line = self.buffer.line(line_idx);
+            let chars: Vec<char> = line.chars().collect();
+
+            let slice: String = if line_idx == start.0 {
+                chars[start.1..].iter().collect()
+            } else if line_idx == end.0 {
+                chars[..end.1.min(chars.len())].iter().collect()
+            } else {
+                chars.iter().collect()
+            };
+
+            result.push_str(&slice);
+            if line_idx != end.0 {
+                result.push('\n');
+            }
+        }
+
+        result
+    }
+
+    pub fn selection_range(&self) -> Option<((usize, usize), (usize, usize))> {
+        let anchor = self.selection_anchor?;
+        let cursor = (self.cursor_y, self.cursor_x);
+        if anchor == cursor {
+            return None;
+        }
+
+        Some(order_positions(anchor, cursor))
+    }
+    pub fn line_content(&self, idx: usize) -> String {
+        self.buffer.line(idx)
+    }
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
@@ -343,9 +671,10 @@ impl Editor {
         .unwrap();
 
         let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let width = self.window_sizes.0 as usize;
 
         if visible_lines == 0 || self.window_sizes.0 == 0 {
-            ui::render_message(&mut out, 0, "Ventana demasiado pequeña");
+            ui::render_message(&mut out, 0, width, "Ventana demasiado pequeña");
             write!(out, "{}", cursor::Show).unwrap();
             stdout.write_all(&out).unwrap();
             stdout.flush().unwrap();
@@ -357,26 +686,29 @@ impl Editor {
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
 
+        let selection = self.selection_range();
+
         for i in start..end {
             let line_num = i + 1;
             let window_row = (i - self.offset_row) as u16;
-            let _line_num_digits = self.buffer.line_count().to_string().len();
 
-            ui::render_line_number(&mut out, line_num, window_row, line_num_width); // valor
-            // anterior:
-            // line_num_digits
+            ui::render_line_number(&mut out, line_num, window_row, line_num_width);
             let line = self.buffer.line(i);
+            let visible_cols = width.saturating_sub(line_num_width);
             ui::render_line_content(
                 &mut out,
                 &line,
                 i,
-                self.offset_col,
+                ui::LineViewport {
+                    start_col: self.offset_col,
+                    visible_cols,
+                },
                 &self.search,
-                i == self.cursor_y,
                 ui::SyntaxRenderConfig {
                     language,
                     syntax_theme: &self.syntax_theme,
                 },
+                selection,
             );
         }
 
@@ -386,18 +718,20 @@ impl Editor {
         ui::render_status_bar(
             &mut out,
             status_row,
+            width,
             self.filename.as_deref(),
             self.cursor_y + 1,
             self.buffer.line_count(),
             self.cursor_x + 1,
+            self.is_dirty(),
         );
 
         if self.state_msg != messages::DEFAULT_STATUS {
-            ui::render_message(&mut out, message_row, &self.state_msg);
+            ui::render_message(&mut out, message_row, width, &self.state_msg);
         } else {
-            ui::render_message(&mut out, message_row, "");
+            ui::render_message(&mut out, message_row, width, "");
         }
-        ui::render_message(&mut out, default_row, messages::DEFAULT_STATUS);
+        ui::render_message(&mut out, default_row, width, messages::DEFAULT_STATUS);
 
         let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
@@ -412,6 +746,14 @@ impl Editor {
 
         stdout.write_all(&out).unwrap();
         stdout.flush().unwrap();
+    }
+}
+
+fn order_positions(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
     }
 }
 

@@ -2,9 +2,10 @@
 use std::io::{self, Write};
 
 use crossterm::{
-    ExecutableCommand, QueueableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
+    cursor,
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     terminal::{self, ClearType},
+    ExecutableCommand, QueueableCommand,
 };
 
 // Constantes para declarar teclas de control
@@ -27,6 +28,18 @@ pub mod keys {
         matches!(key.code, KeyCode::Char('f')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
+    pub fn is_replace_current(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('r'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_replace_all(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
     pub fn is_next_match(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('n')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
@@ -39,19 +52,50 @@ pub mod keys {
         matches!(key.code, KeyCode::Char('g')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
-    pub fn is_copy(key: &KeyEvent) -> bool {
+    /*pub fn is_copy(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }*/
+
+    pub fn is_copy_selection(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_copy_line(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
     }
 
     pub fn is_paste(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_cut(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('x')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_undo(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('z'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_redo(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('z') | KeyCode::Char('y'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && (key.code == KeyCode::Char('y') || key.modifiers.contains(KeyModifiers::SHIFT))
+    }
+    pub fn is_select_all(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('a')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 }
 
 // Constantes para manejar el estado por defecto
 pub mod messages {
     pub const DEFAULT_STATUS: &str =
-        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+C: Copiar | Ctrl+V: Pegar";
+        "Ctrl+Q: Salir | Ctrl+S: Guardar | Ctrl+O: Abrir | Ctrl+Z: Deshacer | Ctrl+Y: Rehacer";
     pub const SAVE_CANCELLED: &str = "Guardado cancelado";
     pub const OPEN_CANCELLED: &str = "Apertura cancelada";
     pub const SEARCH_CANCELLED: &str = "Búsqueda cancelada";
@@ -63,12 +107,16 @@ pub mod messages {
 
 pub fn init_raw_mode() -> io::Result<io::Stdout> {
     terminal::enable_raw_mode()?;
-    Ok(io::stdout())
+    let mut stdout = io::stdout();
+    stdout.execute(EnableMouseCapture)?;
+    Ok(stdout)
 }
 
 pub fn cleanup() -> io::Result<()> {
     terminal::disable_raw_mode()?;
-    io::stdout().execute(cursor::Show)?;
+    let mut stdout = io::stdout();
+    stdout.execute(DisableMouseCapture)?;
+    stdout.execute(cursor::Show)?;
     Ok(())
 }
 

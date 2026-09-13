@@ -146,6 +146,11 @@ impl SearchState {
             None
         }
     }
+    pub fn clear(&mut self) {
+        self.query = None;
+        self.matches.clear();
+        self.current_index = None;
+    }
 }
 
 #[cfg(test)]

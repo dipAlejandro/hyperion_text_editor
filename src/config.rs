@@ -72,20 +72,28 @@ fn parse_syntax_theme(content: &str) -> Option<SyntaxTheme> {
             continue;
         };
 
-        match (in_syntax_section, key) {
-            (true, "keyword") | (_, "syntax.keyword") => {
+        // Si estamos dentro de [syntax], la clave es directa (keyword, string, ...).
+        // Fuera de la sección, solo se acepta la forma "syntax.clave".
+        let normalized_key = if in_syntax_section {
+            Some(key)
+        } else {
+            key.strip_prefix("syntax.")
+        };
+
+        match normalized_key {
+            Some("keyword") => {
                 theme.keyword = color;
                 parsed_any = true;
             }
-            (true, "string") | (_, "syntax.string") => {
+            Some("string") => {
                 theme.string = color;
                 parsed_any = true;
             }
-            (true, "number") | (_, "syntax.number") => {
+            Some("number") => {
                 theme.number = color;
                 parsed_any = true;
             }
-            (true, "comment") | (_, "syntax.comment") => {
+            Some("comment") => {
                 theme.comment = color;
                 parsed_any = true;
             }

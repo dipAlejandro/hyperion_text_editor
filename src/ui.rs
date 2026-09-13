@@ -1,6 +1,6 @@
 use crate::config::SyntaxTheme;
 use crate::search::SearchState;
-use crate::syntax::{SyntaxLanguage, detect_language, tokenize_line};
+use crate::syntax::{detect_language, tokenize_line, SyntaxLanguage};
 use crossterm::{
     cursor,
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
@@ -15,6 +15,12 @@ pub struct SyntaxRenderConfig<'a> {
     pub syntax_theme: &'a SyntaxTheme,
 }
 
+#[derive(Clone, Copy)]
+pub struct LineViewport {
+    pub start_col: usize,
+    pub visible_cols: usize,
+}
+
 pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16, width: usize) {
     write!(stdout, "{}", cursor::MoveTo(0, row)).unwrap();
     write!(stdout, "{}", SetForegroundColor(Color::Cyan)).unwrap();
@@ -26,25 +32,32 @@ pub fn render_line_content<W: Write>(
     stdout: &mut W,
     line: &str,
     line_idx: usize,
-    start_col: usize,
+    viewport: LineViewport,
     search: &SearchState,
-    is_current_line: bool,
     syntax: SyntaxRenderConfig<'_>,
+    selection: Option<((usize, usize), (usize, usize))>,
 ) {
-    let line_bg = is_current_line.then_some(Color::DarkGrey);
     let chars: Vec<char> = line.chars().collect();
     let tokens = tokenize_line(line, syntax.language);
     let mut styled = String::new();
     let mut prev_style: Option<(Option<Color>, Option<Color>)> = None;
 
-    for (col, ch) in chars.iter().enumerate().skip(start_col) {
+    for (col, ch) in chars
+        .iter()
+        .enumerate()
+        .skip(viewport.start_col)
+        .take(viewport.visible_cols)
+    {
         let fg = tokens
             .get(col)
             .and_then(|token| token.map(|t| color_for_token(t, syntax.syntax_theme)));
-        let bg = if is_match_col(line_idx, search, col) {
+
+        let bg = if is_selected_col(line_idx, col, selection) {
+            Some(Color::DarkBlue)
+        } else if is_match_col(line_idx, search, col) {
             Some(Color::Yellow)
         } else {
-            line_bg
+            None
         };
         let style = Some((fg, bg));
 
@@ -67,6 +80,25 @@ pub fn render_line_content<W: Write>(
     }
 
     write!(stdout, "{}", styled).unwrap();
+}
+
+fn is_selected_col(
+    line_idx: usize,
+    col: usize,
+    selection: Option<((usize, usize), (usize, usize))>,
+) -> bool {
+    let Some((start, end)) = selection else {
+        return false;
+    };
+
+    if line_idx < start.0 || line_idx > end.0 {
+        return false;
+    }
+
+    let from = if line_idx == start.0 { start.1 } else { 0 };
+    let to = if line_idx == end.0 { end.1 } else { usize::MAX };
+
+    col >= from && col < to
 }
 
 fn color_for_token(token: crate::syntax::TokenKind, theme: &SyntaxTheme) -> Color {
@@ -96,18 +128,18 @@ pub fn language_from_filename(filename: Option<&str>) -> SyntaxLanguage {
 pub fn render_status_bar<W: Write>(
     stdout: &mut W,
     row: u16,
+    width: usize,
     filename: Option<&str>,
     cursor_line: usize,
     total_lines: usize,
     cursor_col: usize,
+    dirty: bool,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
-    let width = terminal::size()
-        .map(|(width, _)| width as usize)
-        .unwrap_or(0);
+    let dirty_marker = if dirty { " *" } else { "" };
     let status_text = format!(
-        "{} | Linea {}/{}, Col {}",
-        file_info, cursor_line, total_lines, cursor_col
+        "{}{} | Linea {}/{}, Col {}",
+        file_info, dirty_marker, cursor_line, total_lines, cursor_col
     );
     let visible_text = truncate_with_ellipsis(&status_text, width);
     let padded_text = pad_to_width(&visible_text, width);
@@ -129,10 +161,7 @@ pub fn render_status_bar<W: Write>(
     .unwrap();
 }
 
-pub fn render_message<W: Write>(stdout: &mut W, row: u16, message: &str) {
-    let width = terminal::size()
-        .map(|(width, _)| width as usize)
-        .unwrap_or(0);
+pub fn render_message<W: Write>(stdout: &mut W, row: u16, width: usize, message: &str) {
     let visible_message = truncate_with_ellipsis(message, width);
     let padded_message = pad_to_width(&visible_message, width);
     write!(

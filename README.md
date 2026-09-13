@@ -83,33 +83,45 @@ cargo build --release
 ``` bash
 hyperion archivo.txt
 ```
-
-------------------------------------------------------------------------
+----------------------------------------------------------------------
 
 ## 📜 Licencia
 
 MIT
 
-- `Ctrl+Q` - Salir
+## Atajos de teclado
+
+- `Ctrl+Q` - Salir (doble Ctrl+Q si hay cambios sin guardar)
 - `Ctrl+S` - Guardar
 - `Ctrl+O` - Abrir
 - `Ctrl+F` - Buscar
+- `Ctrl+R` - Reemplazar coincidencia actual
+- `Ctrl+Shift+R` - Reemplazar todas las coincidencias
 - `Ctrl+N` - Siguiente resultado
 - `Ctrl+P` - Resultado anterior
 - `Ctrl+G` - Ir a línea
+- `Ctrl+Z` - Deshacer
+- `Ctrl+Y` / `Ctrl+Shift+Z` - Rehacer
+- `Ctrl+A` - Seleccionar todo
+- `Ctrl+X` - Cortar selección
+- `Ctrl+C` - Copiar selección
+- `Ctrl+Shift+C` - Copiar línea completa
+- `Ctrl+V` - Pegar
 - Flechas - Navegar
+- `Shift` + Flechas - Seleccionar texto
 - `Tab` - Insertar 4 espacios
+- `Enter` - Nueva línea (con auto-indentación)
 - `Home` / `End` - Ir al inicio / final de la línea
 - `Page Up` / `Page Down` - Mover una página
-- `Delete` / `Backspace` - Borrar carácter siguiente / anterior
+- `Delete` / `Backspace` - Borrar carácter siguiente / anterior (borra la selección si hay una)
 
 ## Características
 
+- ⚡ Rápido y ligero
 - ✨ Soporte UTF-8 completo
 - 🔍 Búsqueda con resaltado
 - 📝 Números de línea
 - 🎯 Scroll automático
-- ⚡ Rápido y ligero
 
 ## Configuración de colores de sintaxis
 
