@@ -7,7 +7,7 @@ mod syntax;
 mod terminal;
 mod ui;
 
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 
 use crate::{
@@ -24,6 +24,79 @@ fn install_panic_hook() {
     }));
 }
 
+/// Despacha las teclas de movimiento, selección y portapapeles que no
+/// requieren entrada interactiva adicional (sin request_input).
+/// Devuelve true si la tecla fue manejada acá.
+fn dispatch_non_interactive_key(editor: &mut Editor, key: &KeyEvent) -> bool {
+    if keys::is_undo(key) {
+        editor.undo();
+    } else if keys::is_redo(key) {
+        editor.redo();
+    } else if keys::is_select_all(key) {
+        editor.select_all();
+    } else if keys::is_cut(key) {
+        editor.cut_selection();
+    } else if keys::is_copy_line(key) {
+        editor.copy_line();
+    } else if keys::is_copy_selection(key) {
+        editor.copy_selection();
+    } else if keys::is_paste(key) {
+        editor.paste_clipboard();
+    } else {
+        match key.code {
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                editor.start_or_clear_selection();
+                editor.move_up();
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                editor.start_or_clear_selection();
+                editor.move_down();
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                editor.start_or_clear_selection();
+                editor.move_left();
+            }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                editor.start_or_clear_selection();
+                editor.move_right();
+            }
+            KeyCode::Up => {
+                editor.clear_selection();
+                editor.move_up();
+            }
+            KeyCode::Down => {
+                editor.clear_selection();
+                editor.move_down();
+            }
+            KeyCode::Left => {
+                editor.clear_selection();
+                editor.move_left();
+            }
+            KeyCode::Right => {
+                editor.clear_selection();
+                editor.move_right();
+            }
+            KeyCode::Home => {
+                editor.clear_selection();
+                editor.move_to_line_start();
+            }
+            KeyCode::End => {
+                editor.clear_selection();
+                editor.move_to_line_end();
+            }
+            KeyCode::PageUp => editor.move_page_up(),
+            KeyCode::PageDown => editor.move_page_down(),
+            KeyCode::Tab => editor.insert_tab(),
+            KeyCode::Enter => editor.new_line(),
+            KeyCode::Backspace => editor.delete_char(),
+            KeyCode::Delete => editor.delete_forward_char(),
+            KeyCode::Char(c) => editor.insert_char(c),
+            _ => return false,
+        }
+    }
+    true
+}
+
 fn main() {
     install_panic_hook();
     let args = Args::parse_args();
@@ -32,7 +105,6 @@ fn main() {
 
     let mut editor = Editor::new();
 
-    // Si se proporcionó un archivo, intentar abrirlo o preparar para crearlo
     if let Some(filepath) = args.file {
         if std::path::Path::new(&filepath).exists() {
             editor.open_file(&filepath);
@@ -52,7 +124,6 @@ fn main() {
 
     editor.write(&mut stdout);
 
-    // Leer entrada de usuario
     while let Ok(event) = terminal::read_event() {
         match event {
             Event::Resize(width, height) => {
@@ -66,7 +137,6 @@ fn main() {
                     editor.reset_pending_quit();
                 }
 
-                // Limpiar el mensaje de estado antes de procesar la siguiente tecla
                 if !editor.state_msg.starts_with(messages::DEFAULT_STATUS)
                     && !editor.state_msg.starts_with("Nuevo archivo:")
                     && !editor.state_msg.starts_with("Archivo '")
@@ -81,7 +151,6 @@ fn main() {
                     if editor.confirm_quit() {
                         break;
                     }
-
                     editor.write(&mut stdout);
                     continue;
                 } else if keys::is_save(&key) {
@@ -124,7 +193,6 @@ fn main() {
                     editor.previous_match();
                 } else if keys::is_goto_line(&key) {
                     let coords_str = request_input(&mut stdout, "Ir a (linea, columna): ");
-
                     let parts: Vec<&str> = coords_str.split(',').collect();
 
                     if parts.len() != 2 {
@@ -148,65 +216,8 @@ fn main() {
                             editor.state_msg = messages::INVALID_NUMBERS.to_string();
                         }
                     }
-                } else if keys::is_undo(&key) {
-                    editor.undo();
-                } else if keys::is_redo(&key) {
-                    editor.redo();
-                } else if keys::is_select_all(&key) {
-                    editor.select_all();
-                } else if keys::is_cut(&key) {
-                    editor.cut_selection();
-                } else if keys::is_copy_line(&key) {
-                    editor.copy_line();
-                } else if keys::is_copy_selection(&key) {
-                    editor.copy_selection();
-                } else if keys::is_paste(&key) {
-                    editor.paste_clipboard();
                 } else {
-                    match key.code {
-                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            editor.start_or_clear_selection();
-                            editor.move_up();
-                        }
-                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            editor.start_or_clear_selection();
-                            editor.move_down();
-                        }
-                        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            editor.start_or_clear_selection();
-                            editor.move_left();
-                        }
-                        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            editor.start_or_clear_selection();
-                            editor.move_right();
-                        }
-                        KeyCode::Up => {
-                            editor.clear_selection();
-                            editor.move_up();
-                        }
-                        KeyCode::Down => {
-                            editor.clear_selection();
-                            editor.move_down();
-                        }
-                        KeyCode::Left => {
-                            editor.clear_selection();
-                            editor.move_left();
-                        }
-                        KeyCode::Right => {
-                            editor.clear_selection();
-                            editor.move_right();
-                        }
-                        KeyCode::Home => editor.move_to_line_start(),
-                        KeyCode::End => editor.move_to_line_end(),
-                        KeyCode::PageUp => editor.move_page_up(),
-                        KeyCode::PageDown => editor.move_page_down(),
-                        KeyCode::Tab => editor.insert_tab(),
-                        KeyCode::Enter => editor.new_line(),
-                        KeyCode::Backspace => editor.delete_char(),
-                        KeyCode::Delete => editor.delete_forward_char(),
-                        KeyCode::Char(c) => editor.insert_char(c),
-                        _ => {}
-                    }
+                    dispatch_non_interactive_key(&mut editor, &key);
                 }
 
                 editor.adjust_scroll();
@@ -217,4 +228,87 @@ fn main() {
     }
     clear_screen(&mut stdout);
     terminal::cleanup().unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEventKind, KeyEventState};
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn typing_characters_inserts_them() {
+        let mut editor = Editor::new();
+
+        for c in ['h', 'o', 'l', 'a'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        assert_eq!(editor.line_content(0), "hola");
+    }
+    #[test]
+    fn shift_arrow_selects_and_ctrl_c_copies_selection() {
+        let mut editor = Editor::new();
+        for c in ['h', 'o', 'l', 'a'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        // Volver al inicio de la línea y seleccionar con Shift+Right x2.
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Home, KeyModifiers::NONE));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Right, KeyModifiers::SHIFT));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Right, KeyModifiers::SHIFT));
+
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+        // Mover el cursor al final y pegar para verificar qué se copió.
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::End, KeyModifiers::NONE));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+        assert_eq!(editor.line_content(0), "holaho");
+    }
+
+    #[test]
+    fn ctrl_z_undoes_last_insertion() {
+        let mut editor = Editor::new();
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('a'), KeyModifiers::NONE));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('b'), KeyModifiers::NONE));
+
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('z'), KeyModifiers::CONTROL));
+
+        assert_eq!(editor.line_content(0), "a");
+    }
+
+    #[test]
+    fn ctrl_a_selects_all_and_ctrl_x_cuts() {
+        let mut editor = Editor::new();
+        for c in ['h', 'i'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+
+        assert_eq!(editor.line_content(0), "");
+    }
+
+    #[test]
+    fn enter_preserves_indentation() {
+        let mut editor = Editor::new();
+        for c in [' ', ' ', 'x'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Enter, KeyModifiers::NONE));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('y'), KeyModifiers::NONE));
+
+        assert_eq!(editor.line_content(1), "  y");
+    }
 }

@@ -177,11 +177,8 @@ impl Editor {
 
         // Reemplazar de atrás hacia adelante para no invalidar posiciones ya calculadas.
         for m in temp_search.matches().iter().rev() {
-            self.buffer.replace_range(
-                (m.line, m.start_col),
-                (m.line, m.end_col),
-                &replacement,
-            );
+            self.buffer
+                .replace_range((m.line, m.start_col), (m.line, m.end_col), &replacement);
         }
 
         self.cursor_y = 0;
@@ -624,7 +621,9 @@ impl Editor {
 
         Some(order_positions(anchor, cursor))
     }
-
+    pub fn line_content(&self, idx: usize) -> String {
+        self.buffer.line(idx)
+    }
     pub fn write<W: Write>(&self, stdout: &mut W) {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
