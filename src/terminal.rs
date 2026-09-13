@@ -28,6 +28,18 @@ pub mod keys {
         matches!(key.code, KeyCode::Char('f')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
+    pub fn is_replace_current(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('r'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
+    pub fn is_replace_all(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+    }
+
     pub fn is_next_match(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('n')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
@@ -75,9 +87,9 @@ pub mod keys {
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && (key.code == KeyCode::Char('y') || key.modifiers.contains(KeyModifiers::SHIFT))
     }
-pub fn is_select_all(key: &KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Char('a')) && key.modifiers.contains(KeyModifiers::CONTROL)
-}
+    pub fn is_select_all(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('a')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
 }
 
 // Constantes para manejar el estado por defecto

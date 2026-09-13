@@ -66,39 +66,39 @@ fn parse_syntax_theme(content: &str) -> Option<SyntaxTheme> {
         };
 
         let key = key.trim();
-let value = value.trim().trim_matches('"').trim_matches('\'');
+        let value = value.trim().trim_matches('"').trim_matches('\'');
 
-let Some(color) = parse_hex_color(value) else {
-    continue;
-};
+        let Some(color) = parse_hex_color(value) else {
+            continue;
+        };
 
-// Si estamos dentro de [syntax], la clave es directa (keyword, string, ...).
-// Fuera de la sección, solo se acepta la forma "syntax.clave".
-let normalized_key = if in_syntax_section {
-    Some(key)
-} else {
-    key.strip_prefix("syntax.")
-};
+        // Si estamos dentro de [syntax], la clave es directa (keyword, string, ...).
+        // Fuera de la sección, solo se acepta la forma "syntax.clave".
+        let normalized_key = if in_syntax_section {
+            Some(key)
+        } else {
+            key.strip_prefix("syntax.")
+        };
 
-match normalized_key {
-    Some("keyword") => {
-        theme.keyword = color;
-        parsed_any = true;
-    }
-    Some("string") => {
-        theme.string = color;
-        parsed_any = true;
-    }
-    Some("number") => {
-        theme.number = color;
-        parsed_any = true;
-    }
-    Some("comment") => {
-        theme.comment = color;
-        parsed_any = true;
-    }
-    _ => {}
-}
+        match normalized_key {
+            Some("keyword") => {
+                theme.keyword = color;
+                parsed_any = true;
+            }
+            Some("string") => {
+                theme.string = color;
+                parsed_any = true;
+            }
+            Some("number") => {
+                theme.number = color;
+                parsed_any = true;
+            }
+            Some("comment") => {
+                theme.comment = color;
+                parsed_any = true;
+            }
+            _ => {}
+        }
     }
 
     parsed_any.then_some(theme)

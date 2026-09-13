@@ -28,6 +28,7 @@ pub struct Editor {
     search: SearchState,
     clipboard: String,
     selection_anchor: Option<(usize, usize)>, // (line, col)
+    replacement: String,
     syntax_theme: SyntaxTheme,
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
@@ -58,6 +59,7 @@ impl Editor {
             search: SearchState::new(),
             clipboard: String::new(),
             syntax_theme: load_syntax_theme(),
+            replacement: String::new(),
             selection_anchor: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -117,6 +119,76 @@ impl Editor {
         self.search.clear();
         self.selection_anchor = None;
         self.state_msg = "Rehecho".to_string();
+    }
+    pub fn set_replacement(&mut self, replacement: &str) {
+        self.replacement = replacement.to_string();
+    }
+
+    pub fn has_replacement(&self) -> bool {
+        !self.replacement.is_empty()
+    }
+
+    pub fn replace_current_match(&mut self) {
+        let Some(m) = self.search.current_match().cloned() else {
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
+            return;
+        };
+
+        self.push_undo_snapshot();
+
+        self.buffer.replace_range(
+            (m.line, m.start_col),
+            (m.line, m.end_col),
+            &self.replacement,
+        );
+
+        // Recalcular matches ya que el texto cambió.
+        let query = self.search.query().cloned().unwrap_or_default();
+        let lines: Vec<String> = self.buffer.iter_lines().collect();
+        let count = self.search.search(&query, &lines);
+
+        self.cursor_y = m.line;
+        self.cursor_x = m.start_col + self.replacement.chars().count();
+
+        if count > 0 {
+            self.jump_to_current_match();
+            self.state_msg = format!("Reemplazado. {} coincidencias restantes", count);
+        } else {
+            self.state_msg = "Reemplazado. Sin más coincidencias".to_string();
+        }
+    }
+    pub fn replace_all_matches(&mut self) {
+        let Some(query) = self.search.query().cloned() else {
+            self.state_msg = messages::NO_ACTIVE_SEARCH.to_string();
+            return;
+        };
+        let replacement = self.replacement.clone();
+
+        let lines: Vec<String> = self.buffer.iter_lines().collect();
+        let mut temp_search = SearchState::new();
+        let count = temp_search.search(&query, &lines);
+
+        if count == 0 {
+            self.state_msg = format!("No se encontró '{}'", query);
+            return;
+        }
+
+        self.push_undo_snapshot();
+
+        // Reemplazar de atrás hacia adelante para no invalidar posiciones ya calculadas.
+        for m in temp_search.matches().iter().rev() {
+            self.buffer.replace_range(
+                (m.line, m.start_col),
+                (m.line, m.end_col),
+                &replacement,
+            );
+        }
+
+        self.cursor_y = 0;
+        self.cursor_x = 0;
+        self.selection_anchor = None;
+        self.search.clear();
+        self.state_msg = format!("{} reemplazos de '{}' por '{}'", count, query, replacement);
     }
     pub fn open_file(&mut self, path: &str) {
         match TextBuffer::from_file(path) {
@@ -187,17 +259,18 @@ impl Editor {
     pub fn new_line(&mut self) {
         self.delete_selection();
         self.push_undo_snapshot();
-        
+
         let indent = self.buffer.leading_whitespace(self.cursor_y);
         let (new_y, new_x) = self.buffer.split_line(self.cursor_y, self.cursor_x);
         self.cursor_y = new_y;
         self.cursor_x = new_x;
 
         if !indent.is_empty() {
-            self.buffer.insert_str(self.cursor_y, self.cursor_x, &indent);
+            self.buffer
+                .insert_str(self.cursor_y, self.cursor_x, &indent);
             self.cursor_x += indent.chars().count();
-        } 
-        
+        }
+
         self.search.clear();
     }
 
@@ -238,25 +311,25 @@ impl Editor {
         self.search.clear();
         true
     }
-pub fn select_all(&mut self) {
-    let last_line = self.buffer.line_count() - 1;
-    let last_col = self.buffer.line_length(last_line);
+    pub fn select_all(&mut self) {
+        let last_line = self.buffer.line_count() - 1;
+        let last_col = self.buffer.line_length(last_line);
 
-    self.selection_anchor = Some((0, 0));
-    self.cursor_y = last_line;
-    self.cursor_x = last_col;
-    self.state_msg = "Todo seleccionado".to_string();
-}
-pub fn cut_selection(&mut self) {
-    let Some((start, end)) = self.selection_range() else {
-        self.state_msg = "Nada seleccionado".to_string();
-        return;
-    };
+        self.selection_anchor = Some((0, 0));
+        self.cursor_y = last_line;
+        self.cursor_x = last_col;
+        self.state_msg = "Todo seleccionado".to_string();
+    }
+    pub fn cut_selection(&mut self) {
+        let Some((start, end)) = self.selection_range() else {
+            self.state_msg = "Nada seleccionado".to_string();
+            return;
+        };
 
-    self.clipboard = self.extract_range(start, end);
-    self.delete_selection();
-    self.state_msg = "Selección cortada".to_string();
-}
+        self.clipboard = self.extract_range(start, end);
+        self.delete_selection();
+        self.state_msg = "Selección cortada".to_string();
+    }
     pub fn move_up(&mut self) {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
@@ -378,6 +451,7 @@ pub fn cut_selection(&mut self) {
     }
 
     pub fn search(&mut self, query: &str) {
+        self.replacement.clear();
         let lines: Vec<String> = self.buffer.iter_lines().collect();
         let count = self.search.search(query, &lines);
 

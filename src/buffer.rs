@@ -128,12 +128,14 @@ impl TextBuffer {
 
         self.rope.insert(char_idx, text);
     }
-    
+
     /// Devuelve la indentación (espacios/tabs iniciales) de una línea.
     pub fn leading_whitespace(&self, line_idx: usize) -> String {
         let line = self.line(line_idx);
-        line.chars().take_while(|c| *c == ' ' || *c == '\t').collect()
-    }    
+        line.chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect()
+    }
 
     /// Elimina el carácter antes de la posición especificada
     ///
@@ -254,6 +256,12 @@ impl TextBuffer {
 
     pub fn restore(&mut self, rope: Rope) {
         self.rope = rope;
+    }
+
+    /// Reemplaza el texto entre dos posiciones por una nueva cadena.
+    pub fn replace_range(&mut self, start: (usize, usize), end: (usize, usize), text: &str) {
+        self.delete_range(start, end);
+        self.insert_str(start.0, start.1, text);
     }
 }
 

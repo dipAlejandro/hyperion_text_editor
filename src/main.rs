@@ -18,7 +18,7 @@ use crate::{
 
 fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info|{
+    std::panic::set_hook(Box::new(move |info| {
         let _ = terminal::cleanup();
         default_hook(info);
     }));
@@ -108,6 +108,16 @@ fn main() {
                 } else if keys::is_search(&key) {
                     let query = request_input(&mut stdout, "Buscar: ");
                     editor.search(&query);
+                } else if keys::is_replace_current(&key) {
+                    if !editor.has_replacement() {
+                        let replacement = request_input(&mut stdout, "Reemplazar con: ");
+                        editor.set_replacement(&replacement);
+                    }
+                    editor.replace_current_match();
+                } else if keys::is_replace_all(&key) {
+                    let replacement = request_input(&mut stdout, "Reemplazar todo con: ");
+                    editor.set_replacement(&replacement);
+                    editor.replace_all_matches();
                 } else if keys::is_next_match(&key) {
                     editor.next_match();
                 } else if keys::is_prev_match(&key) {
