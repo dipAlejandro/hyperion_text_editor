@@ -4,17 +4,17 @@ mod config;
 mod editor;
 mod search;
 mod syntax;
+mod tabs;
 mod terminal;
 mod ui;
 
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
-};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 use std::io::Write;
 
 use crate::{
     cli::Args,
     editor::Editor,
+    tabs::Tabs,
     terminal::{clear_screen, keys, messages, request_input},
 };
 
@@ -24,6 +24,23 @@ fn install_panic_hook() {
         let _ = terminal::cleanup();
         default_hook(info);
     }));
+}
+/// Intenta cerrar la pestaña activa, pidiendo confirmación si tiene
+/// cambios sin guardar. Devuelve true si el programa debe salir
+/// (se cerró la última pestaña).
+fn try_close_tab(tabs: &mut Tabs) -> bool {
+    if !tabs.current_mut().confirm_quit() {
+        return false;
+    }
+    tabs.close_current()
+}
+fn render(tabs: &Tabs, stdout: &mut impl Write) {
+    tabs.current().write(stdout);
+    let width = tabs.current().width();
+    ui::render_tab_bar(stdout, width, &tabs.labels());
+    let (x, y) = tabs.current().cursor_screen_position();
+    ui::position_cursor(stdout, x, y);
+    stdout.flush().unwrap();
 }
 
 /// Despacha las teclas de movimiento, selección y portapapeles que no
@@ -105,9 +122,10 @@ fn main() {
 
     let mut stdout = terminal::init_raw_mode().unwrap();
 
-    let mut editor = Editor::new();
+    let mut tabs = Tabs::new();
 
     if let Some(filepath) = args.file {
+        let editor = tabs.current_mut();
         if std::path::Path::new(&filepath).exists() {
             editor.open_file(&filepath);
         } else {
@@ -124,17 +142,18 @@ fn main() {
         stdout.flush().unwrap();
     }
 
-    editor.write(&mut stdout);
+    render(&tabs, &mut stdout);
 
     while let Ok(event) = terminal::read_event() {
         match event {
             Event::Resize(width, height) => {
-                editor.update_window_size(width, height);
-                editor.adjust_scroll();
-                editor.write(&mut stdout);
+                tabs.current_mut().update_window_size(width, height);
+                tabs.current_mut().adjust_scroll();
+                render(&tabs, &mut stdout);
                 continue;
             }
             Event::Mouse(mouse_event) => {
+                let editor = tabs.current_mut();
                 match mouse_event.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         editor.click_at(mouse_event.column, mouse_event.row);
@@ -144,75 +163,90 @@ fn main() {
                     _ => {}
                 }
                 editor.adjust_scroll();
-                editor.write(&mut stdout);
+                render(&tabs, &mut stdout);
                 continue;
             }
             Event::Key(key) => {
                 if !keys::is_quit(&key) {
-                    editor.reset_pending_quit();
+                    tabs.current_mut().reset_pending_quit();
                 }
 
-                if !editor.state_msg.starts_with(messages::DEFAULT_STATUS)
-                    && !editor.state_msg.starts_with("Nuevo archivo:")
-                    && !editor.state_msg.starts_with("Archivo '")
-                    && !editor.state_msg.starts_with("Encontradas")
-                    && !editor.state_msg.starts_with("Coincidencia")
-                    && !editor.state_msg.starts_with("Posicionado")
                 {
-                    editor.state_msg = messages::DEFAULT_STATUS.to_string();
+                    let editor = tabs.current_mut();
+                    if !editor.state_msg.starts_with(messages::DEFAULT_STATUS)
+                        && !editor.state_msg.starts_with("Nuevo archivo:")
+                        && !editor.state_msg.starts_with("Archivo '")
+                        && !editor.state_msg.starts_with("Encontradas")
+                        && !editor.state_msg.starts_with("Coincidencia")
+                        && !editor.state_msg.starts_with("Posicionado")
+                    {
+                        editor.state_msg = messages::DEFAULT_STATUS.to_string();
+                    }
                 }
 
                 if keys::is_quit(&key) {
-                    if editor.confirm_quit() {
+                    if tabs.current_mut().confirm_quit() {
+                        if try_close_tab(&mut tabs) {
+                            break;
+                        }
+                    }
+                    render(&tabs, &mut stdout);
+                    continue;
+                } else if keys::is_new_tab(&key) {
+                    tabs.new_tab();
+                } else if keys::is_close_tab(&key) {
+                    if try_close_tab(&mut tabs) {
                         break;
                     }
-                    editor.write(&mut stdout);
-                    continue;
+                } else if keys::is_next_tab(&key) {
+                    tabs.next_tab();
+                } else if keys::is_previous_tab(&key) {
+                    tabs.previous_tab();
                 } else if keys::is_save(&key) {
-                    let path = match &editor.filename {
+                    let path = match &tabs.current().filename {
                         Some(name) => name.clone(),
                         None => {
                             let name = request_input(&mut stdout, "Guardar como: ");
                             if name.is_empty() {
-                                editor.state_msg = messages::SAVE_CANCELLED.to_string();
-                                editor.write(&mut stdout);
+                                tabs.current_mut().state_msg = messages::SAVE_CANCELLED.to_string();
+                                render(&tabs, &mut stdout);
                                 continue;
                             }
                             name
                         }
                     };
-                    editor.save_file(&path);
+                    tabs.current_mut().save_file(&path);
                 } else if keys::is_open(&key) {
                     let path = request_input(&mut stdout, "Abrir archivo: ");
                     if !path.is_empty() {
-                        editor.open_file(&path);
+                        tabs.current_mut().open_file(&path);
                     } else {
-                        editor.state_msg = messages::OPEN_CANCELLED.to_string();
+                        tabs.current_mut().state_msg = messages::OPEN_CANCELLED.to_string();
                     }
                 } else if keys::is_search(&key) {
                     let query = request_input(&mut stdout, "Buscar: ");
-                    editor.search(&query);
+                    tabs.current_mut().search(&query);
                 } else if keys::is_replace_current(&key) {
-                    if !editor.has_replacement() {
+                    if !tabs.current().has_replacement() {
                         let replacement = request_input(&mut stdout, "Reemplazar con: ");
-                        editor.set_replacement(&replacement);
+                        tabs.current_mut().set_replacement(&replacement);
                     }
-                    editor.replace_current_match();
+                    tabs.current_mut().replace_current_match();
                 } else if keys::is_replace_all(&key) {
                     let replacement = request_input(&mut stdout, "Reemplazar todo con: ");
-                    editor.set_replacement(&replacement);
-                    editor.replace_all_matches();
+                    tabs.current_mut().set_replacement(&replacement);
+                    tabs.current_mut().replace_all_matches();
                 } else if keys::is_next_match(&key) {
-                    editor.next_match();
+                    tabs.current_mut().next_match();
                 } else if keys::is_prev_match(&key) {
-                    editor.previous_match();
+                    tabs.current_mut().previous_match();
                 } else if keys::is_goto_line(&key) {
                     let coords_str = request_input(&mut stdout, "Ir a (linea, columna): ");
                     let parts: Vec<&str> = coords_str.split(',').collect();
 
                     if parts.len() != 2 {
-                        editor.state_msg = messages::INVALID_FORMAT.to_string();
-                        editor.write(&mut stdout);
+                        tabs.current_mut().state_msg = messages::INVALID_FORMAT.to_string();
+                        render(&tabs, &mut stdout);
                         continue;
                     }
 
@@ -222,21 +256,22 @@ fn main() {
                     ) {
                         (Ok(line), Ok(col)) => {
                             if line == 0 || col == 0 {
-                                editor.state_msg = messages::LINES_START_AT_ONE.to_string();
+                                tabs.current_mut().state_msg =
+                                    messages::LINES_START_AT_ONE.to_string();
                             } else {
-                                editor.go_to_line((line - 1, col - 1));
+                                tabs.current_mut().go_to_line((line - 1, col - 1));
                             }
                         }
                         _ => {
-                            editor.state_msg = messages::INVALID_NUMBERS.to_string();
+                            tabs.current_mut().state_msg = messages::INVALID_NUMBERS.to_string();
                         }
                     }
                 } else {
-                    dispatch_non_interactive_key(&mut editor, &key);
+                    dispatch_non_interactive_key(tabs.current_mut(), &key);
                 }
 
-                editor.adjust_scroll();
-                editor.write(&mut stdout);
+                tabs.current_mut().adjust_scroll();
+                render(&tabs, &mut stdout);
             }
             _ => {}
         }

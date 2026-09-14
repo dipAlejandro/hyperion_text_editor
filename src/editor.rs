@@ -67,7 +67,21 @@ impl Editor {
             pending_quit: false,
         }
     }
+    pub fn width(&self) -> usize {
+        self.window_sizes.0 as usize
+    }
 
+    pub fn cursor_screen_position(&self) -> (u16, u16) {
+        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let (x, y) = ui::calculate_visual_cursor_position(
+            self.cursor_x,
+            self.cursor_y,
+            self.offset_col,
+            self.offset_row,
+            line_num_width,
+        );
+        (x, y + 1)
+    }
     fn push_undo_snapshot(&mut self) {
         self.undo_stack.push(UndoState {
             rope: self.buffer.snapshot(),
@@ -369,13 +383,13 @@ impl Editor {
     }
 
     pub fn move_page_up(&mut self) {
-        let page_size = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let page_size = self.window_sizes.1.saturating_sub(4).max(1) as usize;
         self.cursor_y = self.cursor_y.saturating_sub(page_size);
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
     pub fn move_page_down(&mut self) {
-        let page_size = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let page_size = self.window_sizes.1.saturating_sub(4).max(1) as usize;
         let max_row = self.buffer.line_count().saturating_sub(1);
         self.cursor_y = (self.cursor_y + page_size).min(max_row);
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
@@ -426,7 +440,7 @@ impl Editor {
     }
 
     pub fn adjust_scroll(&mut self) {
-        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(4) as usize;
 
         if self.cursor_y < self.offset_row {
             self.offset_row = self.cursor_y;
@@ -456,7 +470,7 @@ impl Editor {
     pub fn update_window_size(&mut self, width: u16, height: u16) {
         self.window_sizes = (width, height);
 
-        let visible_lines = height.saturating_sub(3) as usize;
+        let visible_lines = height.saturating_sub(4) as usize;
         let line_count = self.buffer.line_count();
         let max_visible_lines = visible_lines.max(1);
         let max_offset_row = line_count.saturating_sub(max_visible_lines);
@@ -662,7 +676,7 @@ impl Editor {
         let mut out: Vec<u8> = Vec::with_capacity(16 * 1024);
 
         write!(out, "{}", cursor::Hide).unwrap();
-        write!(out, "{}", cursor::MoveTo(0, 0)).unwrap();
+        write!(out, "{}", cursor::MoveTo(0, 1)).unwrap();
         write!(
             out,
             "{}",
@@ -670,11 +684,11 @@ impl Editor {
         )
         .unwrap();
 
-        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(4) as usize;
         let width = self.window_sizes.0 as usize;
 
         if visible_lines == 0 || self.window_sizes.0 == 0 {
-            ui::render_message(&mut out, 0, width, "Ventana demasiado pequeña");
+            ui::render_message(&mut out, 1, width, "Ventana demasiado pequeña");
             write!(out, "{}", cursor::Show).unwrap();
             stdout.write_all(&out).unwrap();
             stdout.flush().unwrap();
@@ -690,7 +704,7 @@ impl Editor {
 
         for i in start..end {
             let line_num = i + 1;
-            let window_row = (i - self.offset_row) as u16;
+            let window_row = 1 + (i - self.offset_row) as u16;
 
             ui::render_line_number(&mut out, line_num, window_row, line_num_width);
             let line = self.buffer.line(i);
@@ -733,13 +747,7 @@ impl Editor {
         }
         ui::render_message(&mut out, default_row, width, messages::DEFAULT_STATUS);
 
-        let (visual_x, visual_y) = ui::calculate_visual_cursor_position(
-            self.cursor_x,
-            self.cursor_y,
-            self.offset_col,
-            self.offset_row,
-            line_num_width,
-        );
+        let (visual_x, visual_y) = self.cursor_screen_position();
         ui::position_cursor(&mut out, visual_x, visual_y);
 
         write!(out, "{}", cursor::Show).unwrap();
