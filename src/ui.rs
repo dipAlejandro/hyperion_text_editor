@@ -27,7 +27,26 @@ pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16
     write!(stdout, "{:>width$} ", line_number, width = width - 1).unwrap();
     write!(stdout, "{}", ResetColor).unwrap();
 }
+pub fn render_tab_bar<W: Write>(stdout: &mut W, width: usize, tabs: &[(String, bool, bool)]) {
+    let mut text = String::new();
+    for (label, is_active, dirty) in tabs {
+        let marker = if *dirty { "*" } else { "" };
+        if *is_active {
+            text.push_str(&format!("[{}{}] ", label, marker));
+        } else {
+            text.push_str(&format!(" {}{}  ", label, marker));
+        }
+    }
 
+    let visible = truncate_with_ellipsis(&text, width);
+    let padded = pad_to_width(&visible, width);
+
+    write!(stdout, "{}", cursor::MoveTo(0, 0)).unwrap();
+    write!(stdout, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
+    write!(stdout, "{}", SetForegroundColor(Color::White)).unwrap();
+    write!(stdout, "{}", padded).unwrap();
+    write!(stdout, "{}", ResetColor).unwrap();
+}
 pub fn render_line_content<W: Write>(
     stdout: &mut W,
     line: &str,

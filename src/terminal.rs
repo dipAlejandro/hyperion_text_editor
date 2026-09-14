@@ -90,6 +90,21 @@ pub mod keys {
     pub fn is_select_all(key: &KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('a')) && key.modifiers.contains(KeyModifiers::CONTROL)
     }
+    pub fn is_new_tab(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('t')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_close_tab(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('w')) && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    pub fn is_next_tab(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Right) && key.modifiers.contains(KeyModifiers::ALT)
+    }
+
+    pub fn is_previous_tab(key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Left) && key.modifiers.contains(KeyModifiers::ALT)
+    }
 }
 
 // Constantes para manejar el estado por defecto
