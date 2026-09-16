@@ -1,3 +1,5 @@
+use crate::config::LanguageConfig;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyntaxLanguage {
     Rust,
@@ -14,21 +16,27 @@ pub enum TokenKind {
     Comment,
 }
 
-pub fn detect_language(filename: Option<&str>) -> SyntaxLanguage {
+pub fn detect_language(filename: Option<&str>, languages: &LanguageConfig) -> SyntaxLanguage {
     let Some(filename) = filename else {
         return SyntaxLanguage::PlainText;
     };
 
-    let ext = std::path::Path::new(filename)
+    let Some(ext) = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase());
+        .map(|e| e.to_ascii_lowercase())
+    else {
+        return SyntaxLanguage::PlainText;
+    };
 
-    match ext.as_deref() {
-        Some("rs") => SyntaxLanguage::Rust,
-        Some("py") => SyntaxLanguage::Python,
-        Some("js") | Some("mjs") | Some("cjs") | Some("ts") => SyntaxLanguage::JavaScript,
-        _ => SyntaxLanguage::PlainText,
+    if languages.rust.iter().any(|e| e == &ext) {
+        SyntaxLanguage::Rust
+    } else if languages.python.iter().any(|e| e == &ext) {
+        SyntaxLanguage::Python
+    } else if languages.javascript.iter().any(|e| e == &ext) {
+        SyntaxLanguage::JavaScript
+    } else {
+        SyntaxLanguage::PlainText
     }
 }
 
@@ -204,12 +212,33 @@ mod tests {
 
     #[test]
     fn detect_language_by_extension() {
-        assert_eq!(detect_language(Some("main.rs")), SyntaxLanguage::Rust);
-        assert_eq!(detect_language(Some("app.py")), SyntaxLanguage::Python);
-        assert_eq!(detect_language(Some("app.ts")), SyntaxLanguage::JavaScript);
+        let languages = LanguageConfig::default();
         assert_eq!(
-            detect_language(Some("notes.txt")),
+            detect_language(Some("main.rs"), &languages),
+            SyntaxLanguage::Rust
+        );
+        assert_eq!(
+            detect_language(Some("app.py"), &languages),
+            SyntaxLanguage::Python
+        );
+        assert_eq!(
+            detect_language(Some("app.ts"), &languages),
+            SyntaxLanguage::JavaScript
+        );
+        assert_eq!(
+            detect_language(Some("notes.txt"), &languages),
             SyntaxLanguage::PlainText
+        );
+    }
+
+    #[test]
+    fn detect_language_with_custom_extensions() {
+        let mut languages = LanguageConfig::default();
+        languages.javascript.push("tsx".to_string());
+
+        assert_eq!(
+            detect_language(Some("app.tsx"), &languages),
+            SyntaxLanguage::JavaScript
         );
     }
 

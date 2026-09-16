@@ -37,7 +37,14 @@ fn try_close_tab(tabs: &mut Tabs) -> bool {
 fn render(tabs: &Tabs, stdout: &mut impl Write) {
     tabs.current().write(stdout);
     let width = tabs.current().width();
-    ui::render_tab_bar(stdout, width, &tabs.labels());
+    let theme = tabs.current().ui_theme();
+    ui::render_tab_bar(
+        stdout,
+        width,
+        &tabs.labels(),
+        theme.tab_bar_bg,
+        theme.tab_bar_fg,
+    );
     let (x, y) = tabs.current().cursor_screen_position();
     ui::position_cursor(stdout, x, y);
     stdout.flush().unwrap();

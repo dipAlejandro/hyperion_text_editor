@@ -10,7 +10,10 @@ use ropey::Rope;
 
 use crate::{
     buffer::TextBuffer,
-    config::{load_syntax_theme, SyntaxTheme},
+    config::{
+        load_editor_config, load_language_config, load_syntax_theme, load_ui_theme, LanguageConfig,
+        SyntaxTheme, UiTheme,
+    },
     search::SearchState,
     terminal::messages,
     ui,
@@ -27,9 +30,13 @@ pub struct Editor {
     offset_col: usize,
     search: SearchState,
     clipboard: String,
-    selection_anchor: Option<(usize, usize)>, // (line, col)
+    selection_anchor: Option<(usize, usize)>,
     replacement: String,
     syntax_theme: SyntaxTheme,
+    ui_theme: UiTheme,
+    tab_size: usize,
+    language_config: LanguageConfig,
+    show_line_numbers: bool,
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
     dirty: bool,
@@ -59,6 +66,10 @@ impl Editor {
             search: SearchState::new(),
             clipboard: String::new(),
             syntax_theme: load_syntax_theme(),
+            ui_theme: load_ui_theme(),
+            tab_size: load_editor_config().tab_size,
+            language_config: load_language_config(),
+            show_line_numbers: load_editor_config().show_line_numbers,
             replacement: String::new(),
             selection_anchor: None,
             undo_stack: Vec::new(),
@@ -72,7 +83,7 @@ impl Editor {
     }
 
     pub fn cursor_screen_position(&self) -> (u16, u16) {
-        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let line_num_width = self.line_num_width();
         let (x, y) = ui::calculate_visual_cursor_position(
             self.cursor_x,
             self.cursor_y,
@@ -81,6 +92,13 @@ impl Editor {
             line_num_width,
         );
         (x, y + 1)
+    }
+    fn line_num_width(&self) -> usize {
+        if self.show_line_numbers {
+            ui::calculate_line_number_width(self.buffer.line_count())
+        } else {
+            0
+        }
     }
     fn push_undo_snapshot(&mut self) {
         self.undo_stack.push(UndoState {
@@ -220,6 +238,10 @@ impl Editor {
         }
     }
 
+    pub fn ui_theme(&self) -> UiTheme {
+        self.ui_theme
+    }
+
     pub fn save_file(&mut self, path: &str) {
         match self.buffer.save_to_file(path) {
             Ok(_) => {
@@ -287,10 +309,10 @@ impl Editor {
 
     pub fn insert_tab(&mut self) {
         self.push_undo_snapshot();
-        const TAB_SPACES: &str = "    "; // 4 espacios
+        let spaces = " ".repeat(self.tab_size);
         self.buffer
-            .insert_str(self.cursor_y, self.cursor_x, TAB_SPACES);
-        self.cursor_x += TAB_SPACES.chars().count();
+            .insert_str(self.cursor_y, self.cursor_x, &spaces);
+        self.cursor_x += spaces.chars().count();
         self.search.clear();
     }
 
@@ -407,7 +429,7 @@ impl Editor {
         let last_line = self.buffer.line_count().saturating_sub(1);
         self.cursor_y = (self.offset_row + clicked_row).min(last_line);
 
-        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let line_num_width = self.line_num_width();
         let clicked_col = screen_col as usize;
         let target_col = clicked_col
             .saturating_sub(line_num_width)
@@ -450,7 +472,7 @@ impl Editor {
             self.offset_row = self.cursor_y - visible_lines + 1;
         }
 
-        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let line_num_width = self.line_num_width();
         let visible_cols = (self.window_sizes.0 as usize).saturating_sub(line_num_width);
 
         if self.cursor_x < self.offset_col {
@@ -482,7 +504,7 @@ impl Editor {
             self.offset_row = max_offset_row;
         }
 
-        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
+        let line_num_width = self.line_num_width();
         let visible_cols = width.saturating_sub(line_num_width as u16).max(1) as usize;
         let line_length = self.buffer.line_length(self.cursor_y);
         let max_offset_col = line_length.saturating_sub(visible_cols);
@@ -694,8 +716,8 @@ impl Editor {
             stdout.flush().unwrap();
             return;
         }
-        let line_num_width = ui::calculate_line_number_width(self.buffer.line_count());
-        let language = ui::language_from_filename(self.filename.as_deref());
+        let line_num_width = self.line_num_width();
+        let language = ui::language_from_filename(self.filename.as_deref(), &self.language_config);
 
         let start = self.offset_row;
         let end = (self.offset_row + visible_lines).min(self.buffer.line_count());
@@ -706,7 +728,9 @@ impl Editor {
             let line_num = i + 1;
             let window_row = 1 + (i - self.offset_row) as u16;
 
-            ui::render_line_number(&mut out, line_num, window_row, line_num_width);
+            if self.show_line_numbers {
+                ui::render_line_number(&mut out, line_num, window_row, line_num_width);
+            }
             let line = self.buffer.line(i);
             let visible_cols = width.saturating_sub(line_num_width);
             ui::render_line_content(
@@ -723,6 +747,7 @@ impl Editor {
                     syntax_theme: &self.syntax_theme,
                 },
                 selection,
+                self.ui_theme.selection_bg,
             );
         }
 
@@ -738,6 +763,8 @@ impl Editor {
             self.buffer.line_count(),
             self.cursor_x + 1,
             self.is_dirty(),
+            self.ui_theme.status_bar_bg,
+            self.ui_theme.status_bar_fg,
         );
 
         if self.state_msg != messages::DEFAULT_STATUS {

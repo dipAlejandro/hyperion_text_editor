@@ -1,3 +1,4 @@
+use crate::config::LanguageConfig;
 use crate::config::SyntaxTheme;
 use crate::search::SearchState;
 use crate::syntax::{detect_language, tokenize_line, SyntaxLanguage};
@@ -27,7 +28,13 @@ pub fn render_line_number<W: Write>(stdout: &mut W, line_number: usize, row: u16
     write!(stdout, "{:>width$} ", line_number, width = width - 1).unwrap();
     write!(stdout, "{}", ResetColor).unwrap();
 }
-pub fn render_tab_bar<W: Write>(stdout: &mut W, width: usize, tabs: &[(String, bool, bool)]) {
+pub fn render_tab_bar<W: Write>(
+    stdout: &mut W,
+    width: usize,
+    tabs: &[(String, bool, bool)],
+    bg: Color,
+    fg: Color,
+) {
     let mut text = String::new();
     for (label, is_active, dirty) in tabs {
         let marker = if *dirty { "*" } else { "" };
@@ -42,8 +49,8 @@ pub fn render_tab_bar<W: Write>(stdout: &mut W, width: usize, tabs: &[(String, b
     let padded = pad_to_width(&visible, width);
 
     write!(stdout, "{}", cursor::MoveTo(0, 0)).unwrap();
-    write!(stdout, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
-    write!(stdout, "{}", SetForegroundColor(Color::White)).unwrap();
+    write!(stdout, "{}", SetBackgroundColor(bg)).unwrap();
+    write!(stdout, "{}", SetForegroundColor(fg)).unwrap();
     write!(stdout, "{}", padded).unwrap();
     write!(stdout, "{}", ResetColor).unwrap();
 }
@@ -55,6 +62,7 @@ pub fn render_line_content<W: Write>(
     search: &SearchState,
     syntax: SyntaxRenderConfig<'_>,
     selection: Option<((usize, usize), (usize, usize))>,
+    selection_bg: Color,
 ) {
     let chars: Vec<char> = line.chars().collect();
     let tokens = tokenize_line(line, syntax.language);
@@ -72,7 +80,7 @@ pub fn render_line_content<W: Write>(
             .and_then(|token| token.map(|t| color_for_token(t, syntax.syntax_theme)));
 
         let bg = if is_selected_col(line_idx, col, selection) {
-            Some(Color::DarkBlue)
+            Some(selection_bg)
         } else if is_match_col(line_idx, search, col) {
             Some(Color::Yellow)
         } else {
@@ -140,10 +148,12 @@ fn is_match_col(line_idx: usize, search: &SearchState, col: usize) -> bool {
         .any(|m| m.line == line_idx && col >= m.start_col && col < m.end_col)
 }
 
-pub fn language_from_filename(filename: Option<&str>) -> SyntaxLanguage {
-    detect_language(filename)
+pub fn language_from_filename(
+    filename: Option<&str>,
+    languages: &LanguageConfig,
+) -> SyntaxLanguage {
+    detect_language(filename, languages)
 }
-
 pub fn render_status_bar<W: Write>(
     stdout: &mut W,
     row: u16,
@@ -153,6 +163,8 @@ pub fn render_status_bar<W: Write>(
     total_lines: usize,
     cursor_col: usize,
     dirty: bool,
+    bg: Color,
+    fg: Color,
 ) {
     let file_info = filename.unwrap_or("[Sin nombre]");
     let dirty_marker = if dirty { " *" } else { "" };
@@ -166,10 +178,10 @@ pub fn render_status_bar<W: Write>(
         stdout,
         "{}{}",
         cursor::MoveTo(0, row),
-        SetBackgroundColor(Color::White)
+        SetBackgroundColor(bg)
     )
     .unwrap();
-    write!(stdout, "{}", SetForegroundColor(Color::Black)).unwrap();
+    write!(stdout, "{}", SetForegroundColor(fg)).unwrap();
     write!(stdout, "{}", padded_text).unwrap();
     write!(stdout, "{}", ResetColor).unwrap();
     write!(
