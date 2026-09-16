@@ -255,7 +255,9 @@ impl Editor {
             }
         }
     }
-
+    pub fn cursor_position(&self) -> (usize, usize) {
+        (self.cursor_x, self.cursor_y)
+    }
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

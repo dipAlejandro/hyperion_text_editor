@@ -368,4 +368,103 @@ mod tests {
 
         assert_eq!(editor.line_content(1), "  y");
     }
+    #[cfg(test)]
+    mod tests {
+        use crate::tabs::Tabs;
+
+        #[test]
+        fn new_tab_and_switch_between_tabs() {
+            let mut tabs = Tabs::new();
+            assert_eq!(tabs.labels().len(), 1);
+
+            tabs.new_tab();
+            assert_eq!(tabs.labels().len(), 2);
+
+            tabs.current_mut().insert_char('a');
+            assert_eq!(tabs.current().filename, None);
+
+            tabs.previous_tab();
+            tabs.current_mut().insert_char('b');
+
+            tabs.next_tab();
+            // Volvimos a la segunda pestaña, que sigue teniendo 'a'
+            assert!(tabs.current().is_dirty());
+        }
+
+        #[test]
+        fn close_tab_removes_it_and_keeps_others_intact() {
+            let mut tabs = Tabs::new();
+            tabs.new_tab();
+            tabs.new_tab();
+            assert_eq!(tabs.labels().len(), 3);
+
+            let closed_last = tabs.close_current();
+            assert!(!closed_last);
+            assert_eq!(tabs.labels().len(), 2);
+        }
+
+        #[test]
+        fn closing_last_tab_signals_quit() {
+            let mut tabs = Tabs::new();
+            let closed_last = tabs.close_current();
+            assert!(closed_last);
+        }
+
+        #[test]
+        fn each_tab_has_independent_dirty_state() {
+            let mut tabs = Tabs::new();
+            tabs.current_mut().insert_char('x');
+            assert!(tabs.current().is_dirty());
+
+            tabs.new_tab();
+            assert!(!tabs.current().is_dirty());
+
+            tabs.previous_tab();
+            assert!(tabs.current().is_dirty());
+        }
+
+        #[test]
+        fn mouse_click_moves_cursor_independently_per_tab() {
+            let mut tabs = Tabs::new();
+            tabs.current_mut().update_window_size(80, 24);
+            tabs.current_mut().insert_char('a');
+            tabs.current_mut().insert_char('b');
+            tabs.current_mut().insert_char('c');
+
+            tabs.new_tab();
+            tabs.current_mut().update_window_size(80, 24);
+            tabs.current_mut().insert_char('x');
+
+            // Click en la pestaña 2 en columna 0 no debe mover el cursor de la pestaña 1
+            tabs.current_mut().click_at(0, 1);
+
+            tabs.previous_tab();
+            assert_eq!(tabs.current().cursor_position(), (3, 0));
+        }
+
+        #[test]
+        fn save_and_open_round_trip_through_tabs() {
+            let path = std::env::temp_dir().join(format!(
+                "hyperion_main_test_{}_{}.txt",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let path_str = path.to_str().unwrap().to_string();
+
+            let mut tabs = Tabs::new();
+            tabs.current_mut().insert_char('h');
+            tabs.current_mut().insert_char('i');
+            tabs.current_mut().save_file(&path_str);
+            assert!(!tabs.current().is_dirty());
+
+            tabs.new_tab();
+            tabs.current_mut().open_file(&path_str);
+            assert_eq!(tabs.current().filename.as_deref(), Some(path_str.as_str()));
+
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
