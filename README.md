@@ -81,7 +81,7 @@ cargo build --release
 ## Uso
 
 ``` bash
-hyperion archivo.txt
+hy archivo.txt
 ```
 ----------------------------------------------------------------------
 
@@ -89,17 +89,31 @@ hyperion archivo.txt
 
 MIT
 
+Sin argumentos, abre el editor con un buffer nuevo sin nombre.
+
+------------------------------------------------------------------------
+
 ## Atajos de teclado
 
-- `Ctrl+Q` - Salir (doble Ctrl+Q si hay cambios sin guardar)
+### Archivo
+- `Ctrl+Q` - Salir (doble `Ctrl+Q` si hay cambios sin guardar)
 - `Ctrl+S` - Guardar
 - `Ctrl+O` - Abrir
+
+### Pestañas (multi-buffer)
+- `Ctrl+T` - Nueva pestaña
+- `Ctrl+W` - Cerrar pestaña actual
+- `Alt+←` / `Alt+→` - Pestaña anterior / siguiente
+
+### Búsqueda y reemplazo
 - `Ctrl+F` - Buscar
-- `Ctrl+R` - Reemplazar coincidencia actual
-- `Ctrl+Shift+R` - Reemplazar todas las coincidencias
 - `Ctrl+N` - Siguiente resultado
 - `Ctrl+P` - Resultado anterior
+- `Ctrl+R` - Reemplazar coincidencia actual (pide el texto de reemplazo la primera vez)
+- `Ctrl+Shift+R` - Reemplazar todas las coincidencias
 - `Ctrl+G` - Ir a línea
+
+### Edición
 - `Ctrl+Z` - Deshacer
 - `Ctrl+Y` / `Ctrl+Shift+Z` - Rehacer
 - `Ctrl+A` - Seleccionar todo
@@ -107,25 +121,39 @@ MIT
 - `Ctrl+C` - Copiar selección
 - `Ctrl+Shift+C` - Copiar línea completa
 - `Ctrl+V` - Pegar
-- Flechas - Navegar
-- `Shift` + Flechas - Seleccionar texto
-- `Tab` - Insertar 4 espacios
+- `Tab` - Insertar espacios (cantidad configurable, ver `tab_size`)
 - `Enter` - Nueva línea (con auto-indentación)
+- `Delete` / `Backspace` - Borrar carácter siguiente / anterior (borra la selección si hay una)
+
+### Navegación
+- Flechas - Mover el cursor
+- `Shift` + Flechas - Seleccionar texto
 - `Home` / `End` - Ir al inicio / final de la línea
 - `Page Up` / `Page Down` - Mover una página
-- `Delete` / `Backspace` - Borrar carácter siguiente / anterior (borra la selección si hay una)
+- Click izquierdo (mouse) - Posicionar el cursor
+- Rueda del mouse - Scroll
+
+------------------------------------------------------------------------
 
 ## Características
 
-- ⚡ Rápido y ligero
 - ✨ Soporte UTF-8 completo
-- 🔍 Búsqueda con resaltado
-- 📝 Números de línea
+- 🔍 Búsqueda y reemplazo con resaltado
+- 📝 Números de línea (configurable)
+- 📑 Múltiples pestañas / buffers
+- 🖱️ Soporte de mouse (click y scroll)
+- ↩️ Undo / Redo
 - 🎯 Scroll automático
+- 🎨 Resaltado de sintaxis (Rust, Python, JavaScript/TypeScript)
+- ⚙️ Configuración personalizable vía TOML
+- ⚡ Rápido y ligero
 
-## Configuración de colores de sintaxis
+------------------------------------------------------------------------
 
-Podes personalizar los colores de sintaxis creando un archivo de configuración en alguno de estos paths (en orden de prioridad):
+## ⚙️ Configuración
+
+Podés personalizar el editor creando un archivo TOML en alguno de estos
+paths (en orden de prioridad):
 
 1. Ruta indicada por la variable de entorno `HYPERION_CONFIG`
 2. `./.hyperion.toml`
@@ -133,7 +161,17 @@ Podes personalizar los colores de sintaxis creando un archivo de configuración 
 4. `$XDG_CONFIG_HOME/hyperion/config.toml`
 5. `~/.config/hyperion/config.toml`
 
-Ejemplo:
+Si usas `HYPERION_CONFIG`, puedes apuntar tanto a una ruta absoluta como
+a una ruta con `~`, por ejemplo:
+
+```bash
+export HYPERION_CONFIG="~/.config/hyperion/config.toml"
+```
+
+Todas las secciones son opcionales; lo que no se especifica usa su
+valor por defecto.
+
+### Ejemplo completo
 
 ```toml
 [syntax]
@@ -141,10 +179,54 @@ keyword = "#569CD6"
 string = "#98C379"
 number = "#E5C07B"
 comment = "#5C6370"
+
+[editor]
+tab_size = 4
+show_line_numbers = true
+
+[ui]
+status_bar_bg = "#FFFFFF"
+status_bar_fg = "#000000"
+tab_bar_bg = "#444444"
+tab_bar_fg = "#FFFFFF"
+selection_bg = "#00008B"
+
+[languages]
+rust = ["rs"]
+python = ["py", "pyi"]
+javascript = ["js", "mjs", "cjs", "ts", "tsx"]
 ```
 
-Si usas `HYPERION_CONFIG`, puedes apuntar tanto a una ruta absoluta como a una ruta con `~`, por ejemplo:
+### Referencia de opciones
 
-```bash
-export HYPERION_CONFIG="~/.config/hyperion/config.toml"
+| Sección     | Clave              | Tipo           | Default                          | Descripción                                  |
+|-------------|--------------------|----------------|-----------------------------------|-----------------------------------------------|
+| `syntax`    | `keyword`          | color hex      | `#569CD6` (azul)                 | Color de palabras clave                       |
+| `syntax`    | `string`            | color hex      | verde                            | Color de strings                              |
+| `syntax`    | `number`            | color hex      | amarillo                         | Color de números                              |
+| `syntax`    | `comment`           | color hex      | gris oscuro                      | Color de comentarios                          |
+| `editor`    | `tab_size`          | entero > 0     | `4`                               | Cantidad de espacios que inserta `Tab`        |
+| `editor`    | `show_line_numbers` | booleano       | `true`                            | Mostrar/ocultar números de línea              |
+| `ui`        | `status_bar_bg`     | color hex      | blanco                           | Fondo de la barra de estado                   |
+| `ui`        | `status_bar_fg`     | color hex      | negro                             | Texto de la barra de estado                   |
+| `ui`        | `tab_bar_bg`        | color hex      | gris oscuro                       | Fondo de la barra de pestañas                 |
+| `ui`        | `tab_bar_fg`        | color hex      | blanco                            | Texto de la barra de pestañas                 |
+| `ui`        | `selection_bg`      | color hex      | azul oscuro                       | Fondo del texto seleccionado                  |
+| `languages` | `rust`              | lista de strings | `["rs"]`                       | Extensiones asociadas a resaltado Rust        |
+| `languages` | `python`            | lista de strings | `["py"]`                       | Extensiones asociadas a resaltado Python      |
+| `languages` | `javascript`        | lista de strings | `["js","mjs","cjs","ts"]`     | Extensiones asociadas a resaltado JavaScript  |
+
+Los colores se especifican en formato hexadecimal, con o sin `#`:
+
+```toml
+keyword = "#569CD6"
+keyword = "569CD6"   # también válido
 ```
+
+`tab_size = 0` se ignora y se usa el valor por defecto (`4`).
+
+------------------------------------------------------------------------
+
+## 📜 Licencia
+
+MIT

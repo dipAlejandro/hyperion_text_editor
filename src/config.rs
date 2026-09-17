@@ -1,4 +1,5 @@
 use crossterm::style::Color;
+use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -22,11 +23,125 @@ impl SyntaxTheme {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiTheme {
+    pub status_bar_bg: Color,
+    pub status_bar_fg: Color,
+    pub tab_bar_bg: Color,
+    pub tab_bar_fg: Color,
+    pub selection_bg: Color,
+}
+
+impl UiTheme {
+    pub fn default_theme() -> Self {
+        Self {
+            status_bar_bg: Color::White,
+            status_bar_fg: Color::Black,
+            tab_bar_bg: Color::DarkGrey,
+            tab_bar_fg: Color::White,
+            selection_bg: Color::DarkBlue,
+        }
+    }
+}
+
+impl Default for UiTheme {
+    fn default() -> Self {
+        Self::default_theme()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LanguageConfig {
+    pub rust: Vec<String>,
+    pub python: Vec<String>,
+    pub javascript: Vec<String>,
+}
+
+impl LanguageConfig {
+    pub fn default_config() -> Self {
+        Self {
+            rust: vec!["rs".to_string()],
+            python: vec!["py".to_string()],
+            javascript: vec![
+                "js".to_string(),
+                "mjs".to_string(),
+                "cjs".to_string(),
+                "ts".to_string(),
+            ],
+        }
+    }
+}
+
+impl Default for LanguageConfig {
+    fn default() -> Self {
+        Self::default_config()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorConfig {
+    pub tab_size: usize,
+    pub show_line_numbers: bool,
+}
+
+impl EditorConfig {
+    pub fn default_config() -> Self {
+        Self {
+            tab_size: 4,
+            show_line_numbers: true,
+        }
+    }
+}
+
+impl Default for EditorConfig {
+    fn default() -> Self {
+        Self::default_config()
+    }
+}
 
 impl Default for SyntaxTheme {
     fn default() -> Self {
         Self::default_theme()
     }
+}
+
+#[derive(Deserialize, Default)]
+struct RawConfig {
+    #[serde(default)]
+    syntax: RawSyntaxTheme,
+    #[serde(default)]
+    editor: RawEditorConfig,
+    #[serde(default)]
+    ui: RawUiTheme,
+    #[serde(default)]
+    languages: RawLanguageConfig,
+}
+#[derive(Deserialize, Default)]
+struct RawUiTheme {
+    status_bar_bg: Option<String>,
+    status_bar_fg: Option<String>,
+    tab_bar_bg: Option<String>,
+    tab_bar_fg: Option<String>,
+    selection_bg: Option<String>,
+}
+#[derive(Deserialize, Default)]
+struct RawLanguageConfig {
+    rust: Option<Vec<String>>,
+    python: Option<Vec<String>>,
+    javascript: Option<Vec<String>>,
+}
+#[derive(Deserialize, Default)]
+struct RawSyntaxTheme {
+    keyword: Option<String>,
+    string: Option<String>,
+    number: Option<String>,
+    comment: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawEditorConfig {
+    tab_size: Option<usize>,
+    show_line_numbers: Option<bool>,
 }
 
 pub fn load_syntax_theme() -> SyntaxTheme {
@@ -45,87 +160,142 @@ fn load_syntax_theme_from_path(path: &Path) -> Option<SyntaxTheme> {
 }
 
 fn parse_syntax_theme(content: &str) -> Option<SyntaxTheme> {
+    let raw: RawConfig = toml::from_str(content).ok()?;
     let mut theme = SyntaxTheme::default();
-    let mut in_syntax_section = false;
     let mut parsed_any = false;
 
-    for raw_line in content.lines() {
-        let line = strip_inline_comment(raw_line).trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if line.starts_with('[') && line.ends_with(']') {
-            let section = &line[1..line.len() - 1].trim();
-            in_syntax_section = *section == "syntax";
-            continue;
-        }
-
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-
-        let key = key.trim();
-        let value = value.trim().trim_matches('"').trim_matches('\'');
-
-        let Some(color) = parse_hex_color(value) else {
-            continue;
-        };
-
-        // Si estamos dentro de [syntax], la clave es directa (keyword, string, ...).
-        // Fuera de la sección, solo se acepta la forma "syntax.clave".
-        let normalized_key = if in_syntax_section {
-            Some(key)
-        } else {
-            key.strip_prefix("syntax.")
-        };
-
-        match normalized_key {
-            Some("keyword") => {
-                theme.keyword = color;
-                parsed_any = true;
-            }
-            Some("string") => {
-                theme.string = color;
-                parsed_any = true;
-            }
-            Some("number") => {
-                theme.number = color;
-                parsed_any = true;
-            }
-            Some("comment") => {
-                theme.comment = color;
-                parsed_any = true;
-            }
-            _ => {}
-        }
+    if let Some(color) = raw.syntax.keyword.as_deref().and_then(parse_hex_color) {
+        theme.keyword = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.syntax.string.as_deref().and_then(parse_hex_color) {
+        theme.string = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.syntax.number.as_deref().and_then(parse_hex_color) {
+        theme.number = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.syntax.comment.as_deref().and_then(parse_hex_color) {
+        theme.comment = color;
+        parsed_any = true;
     }
 
     parsed_any.then_some(theme)
 }
 
-fn strip_inline_comment(line: &str) -> &str {
-    let mut in_single = false;
-    let mut in_double = false;
-    let mut prev_was_escape = false;
+pub fn load_ui_theme() -> UiTheme {
+    let theme = UiTheme::default();
 
-    for (idx, ch) in line.char_indices() {
-        match ch {
-            '\'' if !in_double && !prev_was_escape => in_single = !in_single,
-            '"' if !in_single && !prev_was_escape => in_double = !in_double,
-            '#' if !in_single && !in_double => return &line[..idx],
-            _ => {}
-        }
+    let Some(path) = find_config_path() else {
+        return theme;
+    };
 
-        prev_was_escape = ch == '\\' && !prev_was_escape;
-        if ch != '\\' {
-            prev_was_escape = false;
-        }
-    }
-
-    line
+    load_ui_theme_from_path(&path).unwrap_or(theme)
 }
 
+fn load_ui_theme_from_path(path: &Path) -> Option<UiTheme> {
+    let content = fs::read_to_string(path).ok()?;
+    parse_ui_theme(&content)
+}
+
+fn parse_ui_theme(content: &str) -> Option<UiTheme> {
+    let raw: RawConfig = toml::from_str(content).ok()?;
+    let mut theme = UiTheme::default();
+    let mut parsed_any = false;
+
+    if let Some(color) = raw.ui.status_bar_bg.as_deref().and_then(parse_hex_color) {
+        theme.status_bar_bg = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.ui.status_bar_fg.as_deref().and_then(parse_hex_color) {
+        theme.status_bar_fg = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.ui.tab_bar_bg.as_deref().and_then(parse_hex_color) {
+        theme.tab_bar_bg = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.ui.tab_bar_fg.as_deref().and_then(parse_hex_color) {
+        theme.tab_bar_fg = color;
+        parsed_any = true;
+    }
+    if let Some(color) = raw.ui.selection_bg.as_deref().and_then(parse_hex_color) {
+        theme.selection_bg = color;
+        parsed_any = true;
+    }
+
+    parsed_any.then_some(theme)
+}
+pub fn load_language_config() -> LanguageConfig {
+    let config = LanguageConfig::default();
+
+    let Some(path) = find_config_path() else {
+        return config;
+    };
+
+    load_language_config_from_path(&path).unwrap_or(config)
+}
+
+fn load_language_config_from_path(path: &Path) -> Option<LanguageConfig> {
+    let content = fs::read_to_string(path).ok()?;
+    parse_language_config(&content)
+}
+
+fn parse_language_config(content: &str) -> Option<LanguageConfig> {
+    let raw: RawConfig = toml::from_str(content).ok()?;
+    let defaults = LanguageConfig::default();
+
+    if raw.languages.rust.is_none()
+        && raw.languages.python.is_none()
+        && raw.languages.javascript.is_none()
+    {
+        return None;
+    }
+
+    Some(LanguageConfig {
+        rust: raw.languages.rust.unwrap_or(defaults.rust),
+        python: raw.languages.python.unwrap_or(defaults.python),
+        javascript: raw.languages.javascript.unwrap_or(defaults.javascript),
+    })
+}
+pub fn load_editor_config() -> EditorConfig {
+    let config = EditorConfig::default();
+
+    let Some(path) = find_config_path() else {
+        return config;
+    };
+
+    load_editor_config_from_path(&path).unwrap_or(config)
+}
+
+fn load_editor_config_from_path(path: &Path) -> Option<EditorConfig> {
+    let content = fs::read_to_string(path).ok()?;
+    parse_editor_config(&content)
+}
+
+fn parse_editor_config(content: &str) -> Option<EditorConfig> {
+    let raw: RawConfig = toml::from_str(content).ok()?;
+    let defaults = EditorConfig::default();
+
+    let tab_size = match raw.editor.tab_size {
+        Some(0) | None => defaults.tab_size,
+        Some(size) => size,
+    };
+    let show_line_numbers = raw
+        .editor
+        .show_line_numbers
+        .unwrap_or(defaults.show_line_numbers);
+
+    if raw.editor.tab_size.is_none() && raw.editor.show_line_numbers.is_none() {
+        return None;
+    }
+
+    Some(EditorConfig {
+        tab_size,
+        show_line_numbers,
+    })
+}
 fn find_config_path() -> Option<PathBuf> {
     let current_dir = env::current_dir().ok();
     let env_config = env::var_os("HYPERION_CONFIG").map(PathBuf::from);
@@ -306,26 +476,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_theme_from_dotted_keys() {
-        let content = r##"
-            syntax.keyword = "#010203"
-            syntax.comment = "#0A0B0C"
-        "##;
-
-        let theme = parse_syntax_theme(content).unwrap();
-
-        assert_eq!(theme.keyword, Color::Rgb { r: 1, g: 2, b: 3 });
-        assert_eq!(
-            theme.comment,
-            Color::Rgb {
-                r: 10,
-                g: 11,
-                b: 12
-            }
-        );
-    }
-
-    #[test]
     fn find_config_path_respects_precedence() {
         let base = unique_temp_dir();
         let current_dir = base.join("cwd");
@@ -419,5 +569,68 @@ mod tests {
             .unwrap()
             .as_nanos();
         env::temp_dir().join(format!("hyperion_test_{nanos}"))
+    }
+    #[test]
+    fn parse_editor_config_tab_size() {
+        let content = "[editor]\ntab_size = 2\n";
+        let config = parse_editor_config(content).unwrap();
+        assert_eq!(config.tab_size, 2);
+    }
+
+    #[test]
+    fn parse_editor_config_ignores_zero() {
+        let content = "[editor]\ntab_size = 0\n";
+        let config = parse_editor_config(content).unwrap();
+        assert_eq!(config.tab_size, 4);
+    }
+    #[test]
+    fn parse_editor_config_show_line_numbers() {
+        let content = "[editor]\nshow_line_numbers = false\n";
+        let config = parse_editor_config(content).unwrap();
+        assert!(!config.show_line_numbers);
+        assert_eq!(config.tab_size, 4); // default, no especificado
+    }
+
+    #[test]
+    fn parse_ui_theme_from_section() {
+        let content = r##"
+            [ui]
+            status_bar_bg = "#FFFFFF"
+            selection_bg = "#123456"
+        "##;
+
+        let theme = parse_ui_theme(content).unwrap();
+
+        assert_eq!(
+            theme.status_bar_bg,
+            Color::Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            }
+        );
+        assert_eq!(
+            theme.selection_bg,
+            Color::Rgb {
+                r: 18,
+                g: 52,
+                b: 86
+            }
+        );
+        assert_eq!(theme.tab_bar_bg, Color::DarkGrey); // default, no especificado
+    }
+    #[test]
+    fn parse_language_config_custom_extensions() {
+        let content = r##"
+            [languages]
+            rust = ["rs", "rslib"]
+            javascript = ["js", "tsx"]
+        "##;
+
+        let config = parse_language_config(content).unwrap();
+
+        assert_eq!(config.rust, vec!["rs", "rslib"]);
+        assert_eq!(config.javascript, vec!["js", "tsx"]);
+        assert_eq!(config.python, vec!["py"]); // default, no especificado
     }
 }

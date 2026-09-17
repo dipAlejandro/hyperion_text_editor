@@ -37,7 +37,14 @@ fn try_close_tab(tabs: &mut Tabs) -> bool {
 fn render(tabs: &Tabs, stdout: &mut impl Write) {
     tabs.current().write(stdout);
     let width = tabs.current().width();
-    ui::render_tab_bar(stdout, width, &tabs.labels());
+    let theme = tabs.current().ui_theme();
+    ui::render_tab_bar(
+        stdout,
+        width,
+        &tabs.labels(),
+        theme.tab_bar_bg,
+        theme.tab_bar_fg,
+    );
     let (x, y) = tabs.current().cursor_screen_position();
     ui::position_cursor(stdout, x, y);
     stdout.flush().unwrap();
@@ -156,13 +163,22 @@ fn main() {
                 let editor = tabs.current_mut();
                 match mouse_event.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        editor.click_at(mouse_event.column, mouse_event.row);
+                        editor.start_selection_at(mouse_event.column, mouse_event.row);
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        editor.extend_selection_to(mouse_event.column, mouse_event.row);
                     }
                     MouseEventKind::ScrollUp => editor.scroll_up(3),
                     MouseEventKind::ScrollDown => editor.scroll_down(3),
                     _ => {}
                 }
                 editor.adjust_scroll();
+                editor.write(&mut stdout);
+                continue;
+            }
+            Event::Paste(text) => {
+                tabs.current_mut().insert_text(&text);
+                tabs.current_mut().adjust_scroll();
                 render(&tabs, &mut stdout);
                 continue;
             }
@@ -360,5 +376,157 @@ mod tests {
         dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('y'), KeyModifiers::NONE));
 
         assert_eq!(editor.line_content(1), "  y");
+    }
+    #[cfg(test)]
+    mod tests {
+        use crate::tabs::Tabs;
+
+        #[test]
+        fn new_tab_and_switch_between_tabs() {
+            let mut tabs = Tabs::new();
+            assert_eq!(tabs.labels().len(), 1);
+
+            tabs.new_tab();
+            assert_eq!(tabs.labels().len(), 2);
+
+            tabs.current_mut().insert_char('a');
+            assert_eq!(tabs.current().filename, None);
+
+            tabs.previous_tab();
+            tabs.current_mut().insert_char('b');
+
+            tabs.next_tab();
+            // Volvimos a la segunda pestaña, que sigue teniendo 'a'
+            assert!(tabs.current().is_dirty());
+        }
+
+        #[test]
+        fn close_tab_removes_it_and_keeps_others_intact() {
+            let mut tabs = Tabs::new();
+            tabs.new_tab();
+            tabs.new_tab();
+            assert_eq!(tabs.labels().len(), 3);
+
+            let closed_last = tabs.close_current();
+            assert!(!closed_last);
+            assert_eq!(tabs.labels().len(), 2);
+        }
+
+        #[test]
+        fn closing_last_tab_signals_quit() {
+            let mut tabs = Tabs::new();
+            let closed_last = tabs.close_current();
+            assert!(closed_last);
+        }
+
+        #[test]
+        fn each_tab_has_independent_dirty_state() {
+            let mut tabs = Tabs::new();
+            tabs.current_mut().insert_char('x');
+            assert!(tabs.current().is_dirty());
+
+            tabs.new_tab();
+            assert!(!tabs.current().is_dirty());
+
+            tabs.previous_tab();
+            assert!(tabs.current().is_dirty());
+        }
+
+        #[test]
+        fn mouse_click_moves_cursor_independently_per_tab() {
+            let mut tabs = Tabs::new();
+            tabs.current_mut().update_window_size(80, 24);
+            tabs.current_mut().insert_char('a');
+            tabs.current_mut().insert_char('b');
+            tabs.current_mut().insert_char('c');
+
+            tabs.new_tab();
+            tabs.current_mut().update_window_size(80, 24);
+            tabs.current_mut().insert_char('x');
+
+            // Click en la pestaña 2 en columna 0 no debe mover el cursor de la pestaña 1
+            tabs.current_mut().click_at(0, 1);
+
+            tabs.previous_tab();
+            assert_eq!(tabs.current().cursor_position(), (3, 0));
+        }
+
+        #[test]
+        fn save_and_open_round_trip_through_tabs() {
+            let path = std::env::temp_dir().join(format!(
+                "hyperion_main_test_{}_{}.txt",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let path_str = path.to_str().unwrap().to_string();
+
+            let mut tabs = Tabs::new();
+            tabs.current_mut().insert_char('h');
+            tabs.current_mut().insert_char('i');
+            tabs.current_mut().save_file(&path_str);
+            assert!(!tabs.current().is_dirty());
+
+            tabs.new_tab();
+            tabs.current_mut().open_file(&path_str);
+            assert_eq!(tabs.current().filename.as_deref(), Some(path_str.as_str()));
+
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    #[test]
+    fn ctrl_shift_v_pastes_like_ctrl_v() {
+        let mut editor = Editor::new();
+        for c in ['h', 'i'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::End, KeyModifiers::NONE));
+
+        dispatch_non_interactive_key(
+            &mut editor,
+            &key(
+                KeyCode::Char('V'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+        );
+
+        assert_eq!(editor.line_content(0), "hihi");
+    }
+    #[test]
+    fn insert_text_does_not_compound_indentation() {
+        let mut editor = Editor::new();
+        editor.insert_text("fn main() {\n    let x = 1;\n}\n");
+
+        assert_eq!(editor.line_content(0), "fn main() {");
+        assert_eq!(editor.line_content(1), "    let x = 1;");
+        assert_eq!(editor.line_content(2), "}");
+    }
+    #[test]
+    fn click_at_top_content_row_selects_first_visible_line() {
+        let mut editor = Editor::new();
+        editor.update_window_size(80, 24);
+        editor.insert_text("primera\nsegunda\ntercera");
+
+        // Fila de pantalla 1 es la primera fila de contenido (fila 0 es la tab bar).
+        editor.click_at(0, 1);
+
+        assert_eq!(editor.cursor_position(), (0, 0));
+    }
+
+    #[test]
+    fn drag_selection_matches_visual_rows() {
+        let mut editor = Editor::new();
+        editor.update_window_size(80, 24);
+        editor.insert_text("primera\nsegunda\ntercera");
+        editor.click_at(0, 1);
+
+        editor.start_selection_at(0, 1);
+        editor.extend_selection_to(0, 3); // arrastra hasta "tercera"
+
+        assert_eq!(editor.cursor_position(), (0, 2));
     }
 }

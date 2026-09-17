@@ -3,7 +3,10 @@ use std::io::{self, Write};
 
 use crossterm::{
     cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, KeyEventKind,
+    },
     terminal::{self, ClearType},
     ExecutableCommand, QueueableCommand,
 };
@@ -69,7 +72,8 @@ pub mod keys {
     }
 
     pub fn is_paste(key: &KeyEvent) -> bool {
-        matches!(key.code, KeyCode::Char('v')) && key.modifiers.contains(KeyModifiers::CONTROL)
+        matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
     pub fn is_cut(key: &KeyEvent) -> bool {
@@ -124,12 +128,14 @@ pub fn init_raw_mode() -> io::Result<io::Stdout> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnableMouseCapture)?;
+    stdout.execute(EnableBracketedPaste)?;
     Ok(stdout)
 }
 
 pub fn cleanup() -> io::Result<()> {
     terminal::disable_raw_mode()?;
     let mut stdout = io::stdout();
+    stdout.execute(DisableBracketedPaste)?;
     stdout.execute(DisableMouseCapture)?;
     stdout.execute(cursor::Show)?;
     Ok(())
