@@ -505,4 +505,28 @@ mod tests {
         assert_eq!(editor.line_content(1), "    let x = 1;");
         assert_eq!(editor.line_content(2), "}");
     }
+    #[test]
+    fn click_at_top_content_row_selects_first_visible_line() {
+        let mut editor = Editor::new();
+        editor.update_window_size(80, 24);
+        editor.insert_text("primera\nsegunda\ntercera");
+
+        // Fila de pantalla 1 es la primera fila de contenido (fila 0 es la tab bar).
+        editor.click_at(0, 1);
+
+        assert_eq!(editor.cursor_position(), (0, 0));
+    }
+
+    #[test]
+    fn drag_selection_matches_visual_rows() {
+        let mut editor = Editor::new();
+        editor.update_window_size(80, 24);
+        editor.insert_text("primera\nsegunda\ntercera");
+        editor.click_at(0, 1);
+
+        editor.start_selection_at(0, 1);
+        editor.extend_selection_to(0, 3); // arrastra hasta "tercera"
+
+        assert_eq!(editor.cursor_position(), (0, 2));
+    }
 }

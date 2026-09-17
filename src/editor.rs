@@ -441,8 +441,13 @@ impl Editor {
 
     /// Convierte coordenadas de pantalla a una posición (línea, columna) del buffer.
     fn resolve_click_position(&self, screen_col: u16, screen_row: u16) -> Option<(usize, usize)> {
-        let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
-        let clicked_row = screen_row as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(4) as usize;
+
+        // La fila 0 es la barra de pestañas; el contenido arranca en la fila 1.
+        if screen_row == 0 {
+            return None;
+        }
+        let clicked_row = (screen_row - 1) as usize;
 
         if visible_lines == 0 || clicked_row >= visible_lines {
             return None;
@@ -496,7 +501,7 @@ impl Editor {
 
     /// Desplaza la vista hacia abajo (rueda del mouse).
     pub fn scroll_down(&mut self, lines: usize) {
-        let visible_lines = self.window_sizes.1.saturating_sub(3).max(1) as usize;
+        let visible_lines = self.window_sizes.1.saturating_sub(4).max(1) as usize;
         let max_offset = self.buffer.line_count().saturating_sub(visible_lines);
         self.offset_row = (self.offset_row + lines).min(max_offset);
     }
