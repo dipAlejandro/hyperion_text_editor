@@ -163,13 +163,22 @@ fn main() {
                 let editor = tabs.current_mut();
                 match mouse_event.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        editor.click_at(mouse_event.column, mouse_event.row);
+                        editor.start_selection_at(mouse_event.column, mouse_event.row);
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        editor.extend_selection_to(mouse_event.column, mouse_event.row);
                     }
                     MouseEventKind::ScrollUp => editor.scroll_up(3),
                     MouseEventKind::ScrollDown => editor.scroll_down(3),
                     _ => {}
                 }
                 editor.adjust_scroll();
+                editor.write(&mut stdout);
+                continue;
+            }
+            Event::Paste(text) => {
+                tabs.current_mut().insert_text(&text);
+                tabs.current_mut().adjust_scroll();
                 render(&tabs, &mut stdout);
                 continue;
             }
@@ -466,5 +475,34 @@ mod tests {
 
             let _ = std::fs::remove_file(&path);
         }
+    }
+    #[test]
+    fn ctrl_shift_v_pastes_like_ctrl_v() {
+        let mut editor = Editor::new();
+        for c in ['h', 'i'] {
+            dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        dispatch_non_interactive_key(&mut editor, &key(KeyCode::End, KeyModifiers::NONE));
+
+        dispatch_non_interactive_key(
+            &mut editor,
+            &key(
+                KeyCode::Char('V'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+        );
+
+        assert_eq!(editor.line_content(0), "hihi");
+    }
+    #[test]
+    fn insert_text_does_not_compound_indentation() {
+        let mut editor = Editor::new();
+        editor.insert_text("fn main() {\n    let x = 1;\n}\n");
+
+        assert_eq!(editor.line_content(0), "fn main() {");
+        assert_eq!(editor.line_content(1), "    let x = 1;");
+        assert_eq!(editor.line_content(2), "}");
     }
 }

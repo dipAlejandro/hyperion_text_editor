@@ -112,7 +112,27 @@ impl Editor {
         self.redo_stack.clear();
         self.dirty = true
     }
+    /// Inserta texto crudo (multilínea) sin pasar por la auto-indentación
+    /// de `new_line`. Usado para pegado externo (bracketed paste) y clipboard interno.
+    pub fn insert_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
 
+        self.delete_selection();
+        self.push_undo_snapshot();
+
+        let lines: Vec<&str> = text.split('\n').collect();
+        self.buffer.insert_str(self.cursor_y, self.cursor_x, text);
+
+        if lines.len() == 1 {
+            self.cursor_x += lines[0].chars().count();
+        } else {
+            self.cursor_y += lines.len() - 1;
+            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
+        }
+        self.search.clear();
+    }
     pub fn undo(&mut self) {
         let Some(state) = self.undo_stack.pop() else {
             self.state_msg = "Nada para deshacer".to_string();
@@ -419,28 +439,56 @@ impl Editor {
         self.cursor_x = self.buffer.clamp_column(self.cursor_y, self.cursor_x);
     }
 
-    /// Posiciona el cursor a partir de coordenadas de pantalla (click de mouse).
-    pub fn click_at(&mut self, screen_col: u16, screen_row: u16) {
+    /// Convierte coordenadas de pantalla a una posición (línea, columna) del buffer.
+    fn resolve_click_position(&self, screen_col: u16, screen_row: u16) -> Option<(usize, usize)> {
         let visible_lines = self.window_sizes.1.saturating_sub(3) as usize;
         let clicked_row = screen_row as usize;
 
         if visible_lines == 0 || clicked_row >= visible_lines {
-            return;
+            return None;
         }
 
         let last_line = self.buffer.line_count().saturating_sub(1);
-        self.cursor_y = (self.offset_row + clicked_row).min(last_line);
+        let target_y = (self.offset_row + clicked_row).min(last_line);
 
         let line_num_width = self.line_num_width();
         let clicked_col = screen_col as usize;
-        let target_col = clicked_col
+        let target_x = clicked_col
             .saturating_sub(line_num_width)
             .saturating_add(self.offset_col);
+        let target_x = self.buffer.clamp_column(target_y, target_x);
 
-        self.cursor_x = self.buffer.clamp_column(self.cursor_y, target_col);
+        Some((target_y, target_x))
+    }
+
+    /// Posiciona el cursor a partir de coordenadas de pantalla (click simple de mouse).
+    pub fn click_at(&mut self, screen_col: u16, screen_row: u16) {
+        if let Some((y, x)) = self.resolve_click_position(screen_col, screen_row) {
+            self.cursor_y = y;
+            self.cursor_x = x;
+        }
         self.clear_selection();
     }
 
+    /// Inicia una selección en el punto donde se presionó el botón del mouse.
+    pub fn start_selection_at(&mut self, screen_col: u16, screen_row: u16) {
+        if let Some((y, x)) = self.resolve_click_position(screen_col, screen_row) {
+            self.cursor_y = y;
+            self.cursor_x = x;
+            self.selection_anchor = Some((y, x));
+        }
+    }
+
+    /// Extiende la selección activa hasta la posición arrastrada (drag de mouse).
+    pub fn extend_selection_to(&mut self, screen_col: u16, screen_row: u16) {
+        if self.selection_anchor.is_none() {
+            return;
+        }
+        if let Some((y, x)) = self.resolve_click_position(screen_col, screen_row) {
+            self.cursor_y = y;
+            self.cursor_x = x;
+        }
+    }
     /// Desplaza la vista hacia arriba (rueda del mouse).
     pub fn scroll_up(&mut self, lines: usize) {
         self.offset_row = self.offset_row.saturating_sub(lines);
@@ -608,25 +656,13 @@ impl Editor {
     }
 
     pub fn paste_clipboard(&mut self) {
-        self.push_undo_snapshot();
         if self.clipboard.is_empty() {
             self.state_msg = "Portapapeles vacío".to_string();
             return;
         }
 
-        self.delete_selection();
-
-        let lines: Vec<&str> = self.clipboard.split('\n').collect();
-        self.buffer
-            .insert_str(self.cursor_y, self.cursor_x, &self.clipboard);
-
-        if lines.len() == 1 {
-            self.cursor_x += lines[0].chars().count();
-        } else {
-            self.cursor_y += lines.len() - 1;
-            self.cursor_x = lines.last().unwrap_or(&"").chars().count();
-        }
-        self.search.clear();
+        let clipboard = self.clipboard.clone();
+        self.insert_text(&clipboard);
     }
 
     pub fn start_or_clear_selection(&mut self) {
