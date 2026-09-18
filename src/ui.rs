@@ -252,6 +252,93 @@ fn pad_to_width(text: &str, width: usize) -> String {
     padded.extend(std::iter::repeat_n(' ', width - text_width));
     padded
 }
+pub struct PickerViewport<'a> {
+    pub query: &'a str,
+    pub entries: &'a [crate::picker::PickerEntry],
+    pub selected: usize,
+    pub scroll_offset: usize,
+}
+
+pub fn render_picker<W: Write>(stdout: &mut W, viewport: PickerViewport<'_>) {
+    let width = terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(0);
+    let (_, height) = terminal::size().unwrap_or((80, 24));
+    let visible_rows = (height as usize).saturating_sub(1);
+
+    write!(stdout, "{}", cursor::MoveTo(0, 0)).unwrap();
+    write!(
+        stdout,
+        "{}",
+        terminal::Clear(terminal::ClearType::FromCursorDown)
+    )
+    .unwrap();
+
+    let prompt = format!("Buscar: {}", viewport.query);
+    let visible_prompt = truncate_with_ellipsis(&prompt, width);
+    write!(stdout, "{}", pad_to_width(&visible_prompt, width)).unwrap();
+
+    let start = viewport.scroll_offset;
+    let end = (start + visible_rows).min(viewport.entries.len());
+
+    for (row, entry) in viewport.entries[start..end].iter().enumerate() {
+        let line_row = (row + 1) as u16;
+        let is_selected = start + row == viewport.selected;
+        let is_dir = matches!(entry.kind, crate::picker::PickerEntryKind::Dir);
+
+        write!(stdout, "{}", cursor::MoveTo(0, line_row)).unwrap();
+
+        if is_selected {
+            write!(stdout, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
+        }
+
+        // Sufijo "/" para directorios, igual que netrw/ls -p
+        let display_name = if is_dir {
+            format!("{}/", entry.name)
+        } else {
+            entry.name.clone()
+        };
+
+        let visible_name = truncate_with_ellipsis(&display_name, width);
+        let visible_len = visible_name.chars().count();
+
+        let base_fg = if is_dir { Color::Cyan } else { Color::White };
+
+        let mut styled = String::new();
+        write!(styled, "{}", SetForegroundColor(base_fg)).unwrap();
+        for (col, ch) in visible_name.chars().enumerate() {
+            if entry.match_indices.contains(&col) {
+                write!(styled, "{}", SetForegroundColor(Color::Yellow)).unwrap();
+                styled.push(ch);
+                write!(styled, "{}", SetForegroundColor(base_fg)).unwrap();
+                if is_selected {
+                    write!(styled, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
+                }
+            } else {
+                styled.push(ch);
+            }
+        }
+        write!(styled, "{}", ResetColor).unwrap();
+
+        write!(stdout, "{}", styled).unwrap();
+
+        if is_selected {
+            write!(stdout, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
+        }
+        if visible_len < width {
+            write!(stdout, "{}", " ".repeat(width - visible_len)).unwrap();
+        }
+
+        write!(stdout, "{}", ResetColor).unwrap();
+    }
+
+    write!(
+        stdout,
+        "{}",
+        cursor::MoveTo((8 + viewport.query.chars().count()) as u16, 0)
+    )
+    .unwrap();
+}
 
 #[cfg(test)]
 mod tests {
