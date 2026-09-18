@@ -93,7 +93,7 @@ Sin argumentos, abre el editor con un buffer nuevo sin nombre.
 ### Archivo
 - `Ctrl+Q` - Salir (doble `Ctrl+Q` si hay cambios sin guardar)
 - `Ctrl+S` - Guardar
-- `Ctrl+O` - Abrir
+- `Ctrl+O` - Abrir archivo (file picker, ver detalle abajo)
 
 ### Pestañas (multi-buffer)
 - `Ctrl+T` - Nueva pestaña
@@ -130,10 +130,26 @@ Sin argumentos, abre el editor con un buffer nuevo sin nombre.
 
 ------------------------------------------------------------------------
 
+## 🔎 File picker (Ctrl+O)
+
+Al presionar `Ctrl+O` se abre un explorador de directorios con búsqueda difusa (fuzzy):
+
+- Muestra el contenido del directorio actual (dotfiles ocultos), con `..` como primera entrada para subir al padre.
+- Escribí para filtrar por nombre; los caracteres coincidentes se resaltan.
+- `↑` / `↓` - Mover la selección
+- `Enter` - Entrar al directorio seleccionado, o abrir el archivo seleccionado
+- `Backspace` - Borrar el último carácter del filtro
+- `Esc` - Cancelar
+
+El prompt superior muestra la ruta del directorio actual.
+
+------------------------------------------------------------------------
+
 ## Características
 
 - ✨ Soporte UTF-8 completo
 - 🔍 Búsqueda y reemplazo con resaltado
+- 🔎 File picker con búsqueda difusa (Ctrl+O)
 - 📝 Números de línea (configurable)
 - 📑 Múltiples pestañas / buffers
 - 🖱️ Soporte de mouse (click y scroll)
