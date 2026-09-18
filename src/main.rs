@@ -21,11 +21,6 @@ use crate::{
     terminal::{clear_screen, keys, messages, request_input},
 };
 
-enum Mode {
-    Normal,
-    FilePicker(FilePicker),
-}
-
 fn run_file_picker<W: Write>(stdout: &mut W) -> Option<String> {
     let root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
     let mut picker = FilePicker::open(&root);
@@ -35,9 +30,12 @@ fn run_file_picker<W: Write>(stdout: &mut W) -> Option<String> {
         let visible_rows = (height as usize).saturating_sub(1);
         picker.adjust_scroll(visible_rows);
 
+        let current_dir_display = picker.current_dir().to_string_lossy().into_owned();
+
         ui::render_picker(
             stdout,
             ui::PickerViewport {
+                current_dir: &current_dir_display,
                 query: picker.query(),
                 entries: picker.entries(),
                 selected: picker.selected(),

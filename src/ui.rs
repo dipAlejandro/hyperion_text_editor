@@ -253,6 +253,7 @@ fn pad_to_width(text: &str, width: usize) -> String {
     padded
 }
 pub struct PickerViewport<'a> {
+    pub current_dir: &'a str,
     pub query: &'a str,
     pub entries: &'a [crate::picker::PickerEntry],
     pub selected: usize,
@@ -274,7 +275,7 @@ pub fn render_picker<W: Write>(stdout: &mut W, viewport: PickerViewport<'_>) {
     )
     .unwrap();
 
-    let prompt = format!("Buscar: {}", viewport.query);
+    let prompt = format!("{} > {}", viewport.current_dir, viewport.query);
     let visible_prompt = truncate_with_ellipsis(&prompt, width);
     write!(stdout, "{}", pad_to_width(&visible_prompt, width)).unwrap();
 
@@ -292,7 +293,6 @@ pub fn render_picker<W: Write>(stdout: &mut W, viewport: PickerViewport<'_>) {
             write!(stdout, "{}", SetBackgroundColor(Color::DarkGrey)).unwrap();
         }
 
-        // Sufijo "/" para directorios, igual que netrw/ls -p
         let display_name = if is_dir {
             format!("{}/", entry.name)
         } else {
@@ -335,7 +335,10 @@ pub fn render_picker<W: Write>(stdout: &mut W, viewport: PickerViewport<'_>) {
     write!(
         stdout,
         "{}",
-        cursor::MoveTo((8 + viewport.query.chars().count()) as u16, 0)
+        cursor::MoveTo(
+            (viewport.current_dir.chars().count() + 3 + viewport.query.chars().count()) as u16,
+            0
+        )
     )
     .unwrap();
 }
