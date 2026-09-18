@@ -2,6 +2,7 @@ mod buffer;
 mod cli;
 mod config;
 mod editor;
+mod picker;
 mod search;
 mod syntax;
 mod tabs;
@@ -10,13 +11,59 @@ mod ui;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 use std::io::Write;
+use std::path::Path;
 
 use crate::{
     cli::Args,
     editor::Editor,
+    picker::FilePicker,
     tabs::Tabs,
     terminal::{clear_screen, keys, messages, request_input},
 };
+
+fn run_file_picker<W: Write>(stdout: &mut W) -> Option<String> {
+    let root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let mut picker = FilePicker::open(&root);
+
+    loop {
+        let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
+        let visible_rows = (height as usize).saturating_sub(1);
+        picker.adjust_scroll(visible_rows);
+
+        let current_dir_display = picker.current_dir().to_string_lossy().into_owned();
+
+        ui::render_picker(
+            stdout,
+            ui::PickerViewport {
+                current_dir: &current_dir_display,
+                query: picker.query(),
+                entries: picker.entries(),
+                selected: picker.selected(),
+                scroll_offset: picker.scroll_offset(),
+            },
+        );
+        stdout.flush().unwrap();
+
+        match terminal::read_event() {
+            Ok(Event::Key(key)) => match key.code {
+                KeyCode::Esc => return None,
+                KeyCode::Enter => {
+                    if let Some(path) = picker.activate() {
+                        return Some(path.to_string_lossy().into_owned());
+                    }
+                    // era un directorio: activate() ya navegó, seguimos el loop
+                }
+                KeyCode::Up => picker.move_up(),
+                KeyCode::Down => picker.move_down(),
+                KeyCode::Backspace => picker.backspace(),
+                KeyCode::Char(c) => picker.push_char(c),
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+}
 
 fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
@@ -233,11 +280,9 @@ fn main() {
                     };
                     tabs.current_mut().save_file(&path);
                 } else if keys::is_open(&key) {
-                    let path = request_input(&mut stdout, "Abrir archivo: ");
-                    if !path.is_empty() {
-                        tabs.current_mut().open_file(&path);
-                    } else {
-                        tabs.current_mut().state_msg = messages::OPEN_CANCELLED.to_string();
+                    match run_file_picker(&mut stdout) {
+                        Some(path) => tabs.current_mut().open_file(&path),
+                        None => tabs.current_mut().state_msg = messages::OPEN_CANCELLED.to_string(),
                     }
                 } else if keys::is_search(&key) {
                     let query = request_input(&mut stdout, "Buscar: ");
