@@ -246,3 +246,9 @@ keyword = "569CD6"   # también válido
 ## 📜 Licencia
 
 MIT
+
+------------------------------------------------------------------------
+
+## 🐛 Contribuir
+
+¿Encontraste un bug o querés proponer un cambio? Mirá la guía en [CONTRIBUTING.md](./CONTRIBUTING.md).
